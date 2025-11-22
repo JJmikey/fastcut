@@ -10,19 +10,19 @@
   function getMediaDuration(file, url) {
     return new Promise((resolve) => {
       if (file.type.startsWith('image')) {
-        // 圖片預設給 3 秒 (CapCut 圖片通常預設 3秒)
         resolve(3); 
       } else if (file.type.startsWith('video')) {
-        // 建立一個隱藏的 video 元素來讀取時長
         const video = document.createElement('video');
         video.preload = 'metadata';
-        video.onloadedmetadata = () => {
-          resolve(video.duration); // 回傳真實秒數
-        };
-        video.onerror = () => {
-          resolve(5); // 讀取失敗時的備案
-        };
+        video.onloadedmetadata = () => resolve(video.duration);
+        video.onerror = () => resolve(5);
         video.src = url;
+      } else if (file.type.startsWith('audio')) {
+        // 🔥 新增：支援音訊長度讀取
+        const audio = new Audio();
+        audio.onloadedmetadata = () => resolve(audio.duration);
+        audio.onerror = () => resolve(5);
+        audio.src = url;
       } else {
         resolve(5);
       }
@@ -71,7 +71,7 @@
   <span class="text-xs text-gray-400 group-hover:text-gray-200">Click to Upload</span>
 </button>
 
-<input bind:this={fileInput} type="file" class="hidden" multiple accept="image/*,video/*" on:change={handleFileChange} />
+<input bind:this={fileInput} type="file" class="hidden" multiple accept="image/*,video/*,audio/*" on:change={handleFileChange} />
 
 {#if files.length > 0}
   <div class="mt-4 grid grid-cols-2 gap-2 overflow-y-auto max-h-[calc(100vh-300px)] pr-1 custom-scrollbar">

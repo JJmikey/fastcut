@@ -1,6 +1,7 @@
 <script>
     import { currentVideoSource, currentTime, isPlaying } from '../stores/playerStore';
-    import { mainTrackClips } from '../stores/timelineStore';
+    // 👇 1. 引入 audioTrackClips 以便進行混音
+    import { mainTrackClips, audioTrackClips } from '../stores/timelineStore';
     import { isExporting, startExportTrigger } from '../stores/exportStore';
     import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
     
@@ -10,17 +11,22 @@
     let exportProgress = 0;
     let exportStatus = "";
 
-    $: hasClips = $mainTrackClips.length > 0;
-    $: contentDuration = hasClips 
-        ? Math.max(...$mainTrackClips.map(c => c.startOffset + c.duration)) 
-        : 0;
+    // 👇 2. 計算總長度 (取 Main 與 Audio 兩者較長者)
+    $: maxMain = $mainTrackClips.length > 0 
+        ? Math.max(...$mainTrackClips.map(c => c.startOffset + c.duration)) : 0;
+    $: maxAudio = $audioTrackClips.length > 0
+        ? Math.max(...$audioTrackClips.map(c => c.startOffset + c.duration)) : 0;
+    
+    $: contentDuration = Math.max(maxMain, maxAudio);
+    $: hasClips = contentDuration > 0;
   
+    // 監聽導出觸發
     $: if ($startExportTrigger > 0 && !$isExporting && hasClips) {
         fastExportProcess();
     }
   
     // ------------------------------------------------
-    // 極速導出流程 (Pure WebCodecs)
+    // 極速導出流程 (Pure WebCodecs + Chunking)
     // ------------------------------------------------
     async function fastExportProcess() {
         try {
@@ -73,7 +79,7 @@
             };
             await videoEncoder.configure(videoConfig);
 
-            // 4. 設定 Audio Encoder & 處理音訊 (關鍵修正：切片處理)
+            // 4. 設定 Audio Encoder & 處理音訊
             if (aSupport.supported) {
                 exportStatus = "Processing Audio...";
                 
@@ -83,22 +89,21 @@
                 });
                 audioEncoder.configure(audioConfig);
 
-                // A. 混音
-                const mixedBuffer = await mixAllAudio($mainTrackClips, durationInSeconds, audioConfig.sampleRate);
+                // A. 混音：🔥 關鍵！合併 Main Track 和 Audio Track 的所有片段
+                const allClips = [...$mainTrackClips, ...$audioTrackClips];
+                const mixedBuffer = await mixAllAudio(allClips, durationInSeconds, audioConfig.sampleRate);
                 
                 // B. 轉為交錯數據
                 const left = mixedBuffer.getChannelData(0);
                 const right = mixedBuffer.getChannelData(1);
                 const interleaved = interleave(left, right);
 
-                // C. 🔥 關鍵：切片 (Chunking) 
-                // WebCodecs 不喜歡一次吃太大，我們每 1 秒切一塊
+                // C. 🔥 切片 (Chunking) 邏輯
                 const chunkSize = audioConfig.sampleRate; // 1秒的樣本數
                 const totalSamples = mixedBuffer.length;
 
                 for (let i = 0; i < totalSamples; i += chunkSize) {
                     const len = Math.min(chunkSize, totalSamples - i);
-                    // 這裡要乘 2 因為是雙聲道 (L, R)
                     const chunkData = interleaved.slice(i * 2, (i + len) * 2);
                     
                     const audioData = new AudioData({
@@ -117,7 +122,7 @@
                 await audioEncoder.flush();
             }
 
-            // 5. 處理影像 (保持不變)
+            // 5. 處理影像 (逐幀渲染)
             exportStatus = "Rendering Video...";
             const ctx = canvasRef.getContext('2d', { willReadFrequently: true });
             canvasRef.width = width;
@@ -130,6 +135,7 @@
                 exportProgress = Math.round((i / totalFrames) * 100);
                 await new Promise(r => setTimeout(r, 0));
 
+                // 找出當前時間點的 Video Clip
                 const activeClip = $mainTrackClips.find(clip => 
                     timeInSeconds >= clip.startOffset && 
                     timeInSeconds < (clip.startOffset + clip.duration)
@@ -155,7 +161,7 @@
                         videoRef.currentTime = seekTime;
                     });
 
-                    // Object Fit: Contain
+                    // Object Fit: Contain (保持比例)
                     const vw = videoRef.videoWidth;
                     const vh = videoRef.videoHeight;
                     const r = Math.min(width / vw, height / vh);
@@ -179,7 +185,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `capcut_lite_${Date.now()}.mp4`;
+            a.download = `capcut_edit_${Date.now()}.mp4`;
             document.body.appendChild(a);
             a.click();
             
@@ -200,7 +206,9 @@
 
     // --- Helpers ---
     async function mixAllAudio(clips, totalDuration, targetSampleRate) {
+        // 建立離線環境
         const offlineCtx = new OfflineAudioContext(2, Math.ceil(totalDuration * targetSampleRate), targetSampleRate);
+        
         const promises = clips.map(async (clip) => {
             try {
                 const response = await fetch(clip.fileUrl);
@@ -208,14 +216,20 @@
                 const tempCtx = new AudioContext();
                 const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
                 tempCtx.close(); 
+                
                 const source = offlineCtx.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(offlineCtx.destination);
                 source.start(clip.startOffset);
+                
+                // 處理長度裁剪
                 if (clip.duration < audioBuffer.duration) {
                     source.stop(clip.startOffset + clip.duration);
                 }
-            } catch (e) { console.warn(e); }
+            } catch (e) { 
+                // 忽略純圖片或無聲影片的錯誤
+                // console.warn(e); 
+            }
         });
         await Promise.all(promises);
         return await offlineCtx.startRendering();
@@ -234,7 +248,9 @@
     }
 
     // --- UI Logic (Preview) ---
+    // 這裡只顯示 Video 軌道的預覽畫面
     $: activeClip = $mainTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
+    
     $: if (videoRef && activeClip && !$isExporting) {
         if (!videoRef.src.includes(activeClip.fileUrl)) videoRef.src = activeClip.fileUrl;
         const seekTime = $currentTime - activeClip.startOffset;
@@ -269,7 +285,14 @@
 <div class="flex-1 bg-[#101010] relative flex flex-col justify-center items-center overflow-hidden w-full h-full select-none">
     <canvas bind:this={canvasRef} class="hidden"></canvas>
     <div class="relative w-full h-full flex justify-center items-center group" on:click={togglePlay}>
-        <video bind:this={videoRef} class="max-w-full max-h-full object-contain pointer-events-none {activeClip ? 'block' : 'hidden'}" muted={false} crossorigin="anonymous"></video>
+        
+        <video 
+            bind:this={videoRef} 
+            class="max-w-full max-h-full object-contain pointer-events-none {activeClip ? 'block' : 'hidden'}" 
+            muted={false} 
+            crossorigin="anonymous"
+        ></video>
+        
         {#if activeClip && !$isExporting}
             <div class="absolute top-4 left-4 bg-black/50 px-2 py-1 rounded text-xs text-white z-20">Playing: {activeClip.name}</div>
         {/if}
@@ -279,6 +302,7 @@
         {#if !$isPlaying && hasClips && !$isExporting}
             <div class="absolute z-50 bg-black/50 p-4 rounded-full backdrop-blur-sm pointer-events-none"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="white" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>
         {/if}
+      
         {#if $isExporting}
             <div class="absolute z-50 bg-black/90 px-8 py-6 rounded-xl flex flex-col items-center gap-4 shadow-2xl border border-gray-800">
                 <div class="relative w-12 h-12">

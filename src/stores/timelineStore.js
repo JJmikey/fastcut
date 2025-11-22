@@ -5,5 +5,8 @@ import { writable } from 'svelte/store';
 // 格式範例: { id: 1, fileUrl: '...', type: 'video', startOffset: 0, duration: 5 }
 export const mainTrackClips = writable([]);
 
+// 🔥 新增：第二軌（背景音樂軌）
+export const audioTrackClips = writable([]);
+
 // 用來產生唯一 ID 的輔助函數
 export const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
