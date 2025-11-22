@@ -99,56 +99,61 @@
         let newDuration = initialDuration;
         let newStartOffset = initialStartOffset;
         
-        // 🔥 新增：磁吸功能 (Magnet/Snapping)
-        // 設定吸附距離為 15px
+        // 🧲 磁吸設定
         const snapThreshold = 15 / pixelsPerSecond;
-        const targetTime = $currentTime; // 吸附目標：目前的播放指針位置
+        const targetTime = $currentTime;
 
         if (resizingEdge === 'end') {
             // --- 拉右邊 (End Trim) ---
             let tempEnd = initialStartOffset + initialDuration + deltaSeconds;
             
-            // 🧲 磁吸檢查：如果結尾接近指針，直接吸過去
             if (Math.abs(tempEnd - targetTime) < snapThreshold) {
                 tempEnd = targetTime;
-                // 重新計算 deltaSeconds 以符合吸附後的位置 (為了讓 UI 顯示正確)
-                // newDuration 會在下面重新計算，所以這裡只要確保位置對就好
             }
 
             newDuration = tempEnd - initialStartOffset;
             newDuration = Math.max(0.5, newDuration); 
             newDuration = Math.min(maxDurationLimit, newDuration); 
-            
-            // ❌ 移除這行：不要讓指針跟著跑
-            // previewTime = newStartOffset + newDuration;
 
         } else if (resizingEdge === 'start') {
             // --- 拉左邊 (Start Trim) ---
             let tempStart = initialStartOffset + deltaSeconds;
 
-            // 🧲 磁吸檢查：如果開頭接近指針，直接吸過去
+            // 🧲 磁吸
             if (Math.abs(tempStart - targetTime) < snapThreshold) {
                 tempStart = targetTime;
             }
 
             // 計算變化量
             const change = tempStart - initialStartOffset;
-            
-            if (initialDuration - change < 0.5) {
+            let attemptedDuration = initialDuration - change;
+
+            // 🔥 限制 1: 不能短於 0.5秒
+            if (attemptedDuration < 0.5) {
                 newStartOffset = initialStartOffset + (initialDuration - 0.5);
                 newDuration = 0.5;
-            } else {
+            } 
+            // 🔥 限制 2: 關鍵修復！不能長於原始素材長度 (sourceDuration)
+            else if (attemptedDuration > maxDurationLimit) {
+                newDuration = maxDurationLimit;
+                // startOffset 只能回推到「原本長度允許」的最早位置
+                // 公式：新的開始 = 初始開始 - (最大長度 - 初始長度)
+                newStartOffset = initialStartOffset - (maxDurationLimit - initialDuration);
+            }
+            else {
+                // 正常情況
                 newStartOffset = tempStart;
-                newDuration = initialDuration - change;
+                newDuration = attemptedDuration;
             }
             
+            // 🔥 限制 3: Timeline 起點不能小於 0
             if (newStartOffset < 0) {
                 newStartOffset = 0;
+                // 如果頂到 timeline 0，長度就只能加這麼多
                 newDuration = initialDuration + initialStartOffset;
+                // 再次檢查有沒有超過原始長度 (雙重保險)
+                newDuration = Math.min(maxDurationLimit, newDuration);
             }
-
-            // ❌ 移除這行：不要讓指針跟著跑
-            // previewTime = newStartOffset;
         }
 
         // 更新 Store
@@ -158,14 +163,9 @@
             audioTrackClips.update(clips => clips.map(c => c.id === resizingClipId ? { ...c, startOffset: newStartOffset, duration: newDuration } : c));
         }
 
-        // ❌ 移除這行：這就是導致指針亂跳的原因
-        // currentTime.set(previewTime); 
-
-        // 更新 UI 輔助線 (顯示目前拉到的秒數)
+        // 更新 UI 輔助線
         guideX = e.clientX;
         const currentEdgeTime = resizingEdge === 'end' ? (newStartOffset + newDuration) : newStartOffset;
-        
-        // 顯示是否吸附的提示
         const isSnapped = Math.abs(currentEdgeTime - $currentTime) < 0.001;
         guideTimeText = (isSnapped ? "🧲 " : "") + `${currentEdgeTime.toFixed(2)}s`;
     }
