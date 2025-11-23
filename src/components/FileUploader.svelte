@@ -1,4 +1,6 @@
 <script>
+
+  import { draggedFile } from '../stores/timelineStore'; // 引入
   import { currentVideoSource } from '../stores/playerStore';
   
   let fileInput;
@@ -35,6 +37,13 @@
     
     // 使用 Promise.all 平行處理所有上傳的檔案
     const processedPromises = newRawFiles.map(async (file) => {
+      
+      // 🔥 1. 插入點：檢查檔案大小 (2GB = 2 * 1024 * 1024 * 1024 bytes)
+      if (file.size > 2 * 1024 * 1024 * 1024) {
+          alert(`File "${file.name}" is too large! Please use files under 2GB.`);
+          return null; // 回傳 null 代表這個檔案失敗，稍後會過濾掉
+      }
+
       const url = URL.createObjectURL(file);
       const duration = await getMediaDuration(file, url); // 等待讀取真實長度
       
@@ -42,12 +51,22 @@
         name: file.name,
         type: file.type,
         url: url,
-        duration: duration // 這裡現在是真實的秒數了
+        duration: duration, // 這裡現在是真實的秒數了
+        
+        // 🔥 關鍵新增：必須把原始 file 物件存下來！
+        // 這樣 IndexedDB 才能把它存進硬碟
+        file: file 
       };
     });
 
-    const processedFiles = await Promise.all(processedPromises);
-    files = [...files, ...processedFiles];
+    // 等待所有檔案處理完成 (此時 results 陣列裡可能會包含 null)
+    const results = await Promise.all(processedPromises);
+
+    // 🔥 2. 過濾掉剛剛因為太大而回傳 null 的檔案
+    const validFiles = results.filter(result => result !== null);
+
+    // 更新列表
+    files = [...files, ...validFiles];
     
     e.target.value = '';
   }
@@ -59,7 +78,15 @@
   }
 
   function handleDragStart(e, file) {
-    const dragData = JSON.stringify(file);
+    // 把完整檔案物件存入 store (為了 IndexedDB 能夠存取)
+    draggedFile.set(file);
+
+    const dragData = JSON.stringify({
+        url: file.url,
+        name: file.name,
+        type: file.type,
+        duration: file.duration
+    });
     e.dataTransfer.setData('application/json', dragData);
     e.dataTransfer.effectAllowed = 'copy';
   }

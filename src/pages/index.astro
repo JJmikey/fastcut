@@ -7,12 +7,13 @@ import MediaSidebar from '../components/MediaSidebar.astro';
 import VideoPlayer from '../components/VideoPlayer.svelte'; 
 import Timeline from '../components/Timeline.svelte';   // ✅ 改用這個
 import PropertiesPanel from '../components/PropertiesPanel.astro';
+import ProjectSaver from '../components/ProjectSaver.svelte';
 ---
 
 <Layout>
   <!-- 使用 AppShell 來管理佈局 -->
   <AppShell>
-    
+      <ProjectSaver client:only="svelte" slot="header" /> 
     <!-- 1. 頂部 Header -->
     <Header slot="header" client:load />
 

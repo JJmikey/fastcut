@@ -1,33 +1,72 @@
-<!-- src/components/Header.svelte -->
 <script>
-    import { startExportTrigger, isExporting } from '../stores/exportStore';
-  
-    function handleExport() {
-      // 觸發信號，次數 +1 代表一個新的動作
-      startExportTrigger.update(n => n + 1);
+  import { startExportTrigger, isExporting } from '../stores/exportStore';
+  // 👇 引入需要的 Store 和工具
+  import { mainTrackClips, audioTrackClips } from '../stores/timelineStore';
+  import { currentTime, isPlaying } from '../stores/playerStore';
+  import { clearProject } from '../utils/projectManager';
+
+  function handleExport() {
+    startExportTrigger.update(n => n + 1);
+  }
+
+  // 🔥 New Project 邏輯
+  async function handleNewProject() {
+    // 1. 二次確認，防止誤觸
+    if (!confirm("Are you sure you want to start a new project? All current progress will be lost.")) {
+        return;
     }
-  </script>
-  
-  <header class="h-14 border-b border-gray-700 flex justify-between items-center px-4 bg-[#181818] flex-shrink-0">
-    <div class="flex items-center gap-6">
-      <div class="flex items-center gap-2 cursor-pointer">
-        <span class="text-cyan-400 font-bold text-lg">CapCut AI</span>
-      </div>
-      <div class="h-4 w-[1px] bg-gray-600"></div>
-      <span class="text-sm text-gray-400">Untitled Project</span>
+
+    // 2. 清除 IndexedDB
+    await clearProject();
+
+    // 3. 重置所有 Store 狀態
+    mainTrackClips.set([]);
+    audioTrackClips.set([]);
+    currentTime.set(0);
+    isPlaying.set(false);
+
+    // 4. (選用) 重新整理頁面以釋放記憶體，或者只重置狀態也可以
+    // location.reload(); // 如果你想徹底清空記憶體，可以用這行
+  }
+</script>
+
+<header class="h-14 border-b border-gray-700 flex justify-between items-center px-4 bg-[#181818] flex-shrink-0">
+  <div class="flex items-center gap-6">
+    <div class="flex items-center gap-2 cursor-pointer">
+      <!-- Logo -->
+      <div class="w-6 h-6 bg-cyan-600 rounded flex items-center justify-center font-bold text-white text-xs">C</div>
+      <span class="text-gray-100 font-bold text-lg">CapCut Clone</span>
     </div>
     
+    <!-- 分隔線 -->
+    <div class="h-4 w-[1px] bg-gray-600"></div>
+    
+    <!-- 專案名稱 (未來可以讓使用者改名) -->
+    <span class="text-sm text-gray-400">Untitled Project</span>
+
+    <!-- 🔥 New Project 按鈕 -->
     <button 
-      on:click={handleExport}
-      disabled={$isExporting}
-      class="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+        on:click={handleNewProject}
+        class="text-xs text-gray-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 transition-colors"
+        title="Start New Project (Clear All)"
     >
-      {#if $isExporting}
-        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-        Exporting...
-      {:else}
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-        Export
-      {/if}
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+        New
     </button>
-  </header>
+  </div>
+  
+  <!-- Export 按鈕 -->
+  <button 
+    on:click={handleExport}
+    disabled={$isExporting}
+    class="bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-colors"
+  >
+    {#if $isExporting}
+      <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+      Exporting...
+    {:else}
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+      Export
+    {/if}
+  </button>
+</header>

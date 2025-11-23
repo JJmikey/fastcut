@@ -9,6 +9,10 @@ export const selectedClipId = writable(null);
 
 export const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
 
+// src/stores/timelineStore.js
+export const draggedFile = writable(null); // 用來暫存正在拖曳的檔案物件
+
+
 // 可以在這裡加一個 helper 確保新 clip 結構一致 (選用，但建議)
 export const createClip = (file, startOffset) => ({
     id: generateId(),
