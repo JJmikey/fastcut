@@ -1,5 +1,5 @@
 <script>
-    import { mainTrackClips, audioTrackClips, generateId } from '../stores/timelineStore';
+    import { mainTrackClips, audioTrackClips, generateId, selectedClipId } from '../stores/timelineStore'; // 🔥 引入 selectedClipId
     import { currentTime, isPlaying } from '../stores/playerStore';
     import { onMount } from 'svelte';
 
@@ -16,7 +16,7 @@
     let initialX = 0;           
     let initialDuration = 0;    
     let initialStartOffset = 0; 
-    let initialMediaStart = 0; // 🔥 新增：記錄初始素材偏移量 (用於正確修剪開頭)
+    let initialMediaStart = 0; 
     let maxDurationLimit = 0;   
     
     // Move 變數
@@ -62,7 +62,7 @@
                 startOffset: currentMaxTime, 
                 duration: originalDuration, 
                 sourceDuration: originalDuration,
-                mediaStartOffset: 0 // 🔥 初始化素材起始點
+                mediaStartOffset: 0
             };
             mainTrackClips.update(clips => [...clips, newClip]);
         }
@@ -85,22 +85,59 @@
                 startOffset: currentMaxTime, 
                 duration: originalDuration, 
                 sourceDuration: originalDuration,
-                mediaStartOffset: 0 // 🔥 初始化素材起始點
+                mediaStartOffset: 0
             };
             audioTrackClips.update(clips => [...clips, newClip]);
         }
     }
 
-    // --- Resize Logic (修正版：支援 Trim Start 正確偏移) ---
+    // --- 🔥 新增：刪除邏輯 ---
+    function deleteSelected() {
+        if (!$selectedClipId) return;
+
+        // 嘗試從兩個軌道中刪除該 ID
+        mainTrackClips.update(clips => clips.filter(c => c.id !== $selectedClipId));
+        audioTrackClips.update(clips => clips.filter(c => c.id !== $selectedClipId));
+        
+        // 清空選取狀態
+        selectedClipId.set(null);
+    }
+
+    // 鍵盤監聽
+    function handleKeyDown(e) {
+        // 支援 Delete 鍵 和 Backspace 鍵
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            deleteSelected();
+        }
+    }
+
+    // 右鍵直接刪除 (快速操作)
+    function handleContextMenu(e, clipId) {
+        e.preventDefault(); // 阻止瀏覽器右鍵選單
+        selectedClipId.set(clipId); // 先選中
+        deleteSelected(); // 再刪除
+    }
+
+    // 選取 Clip
+    function selectClip(e, clipId) {
+        // 阻止冒泡，避免觸發 Timeline 背景的取消選取
+        e.stopPropagation(); 
+        selectedClipId.set(clipId);
+    }
+
+    // --- Resize Logic ---
     function startResize(e, clip, trackType, edge) {
         e.stopPropagation();
+        // 縮放時也順便選中該 Clip
+        selectedClipId.set(clip.id);
+
         resizingClipId = clip.id;
         resizingTrack = trackType;
         resizingEdge = edge; 
         initialX = e.clientX;
         initialDuration = clip.duration;
         initialStartOffset = clip.startOffset;
-        initialMediaStart = clip.mediaStartOffset || 0; // 記錄當前素材偏移
+        initialMediaStart = clip.mediaStartOffset || 0;
         maxDurationLimit = clip.sourceDuration || clip.duration;
         
         showGuide = true;
@@ -115,74 +152,46 @@
         
         let newDuration = initialDuration;
         let newStartOffset = initialStartOffset;
-        let newMediaStart = initialMediaStart; // 準備計算新的素材起始點
+        let newMediaStart = initialMediaStart;
         
-        // 🧲 磁吸設定
         const snapThreshold = 15 / pixelsPerSecond;
         const targetTime = $currentTime;
 
         if (resizingEdge === 'end') {
-            // --- 拉右邊 (End Trim) ---
             let tempEnd = initialStartOffset + initialDuration + deltaSeconds;
-            
-            // 磁吸
-            if (Math.abs(tempEnd - targetTime) < snapThreshold) {
-                tempEnd = targetTime;
-            }
-
-            // 計算長度 (注意：最大長度受到 mediaStartOffset 的影響)
-            // 可用剩餘長度 = 原始總長 - 已經剪掉的開頭
+            if (Math.abs(tempEnd - targetTime) < snapThreshold) tempEnd = targetTime;
             const maxAllowedDuration = maxDurationLimit - initialMediaStart;
-            
             newDuration = tempEnd - initialStartOffset;
             newDuration = Math.max(0.5, newDuration); 
             newDuration = Math.min(maxAllowedDuration, newDuration); 
 
         } else if (resizingEdge === 'start') {
-            // --- 拉左邊 (Start Trim) ---
             let tempStart = initialStartOffset + deltaSeconds;
-
-            // 磁吸
-            if (Math.abs(tempStart - targetTime) < snapThreshold) {
-                tempStart = targetTime;
-            }
-
+            if (Math.abs(tempStart - targetTime) < snapThreshold) tempStart = targetTime;
             const change = tempStart - initialStartOffset;
             let attemptedDuration = initialDuration - change;
 
-            // 限制 1: 不能短於 0.5秒
             if (attemptedDuration < 0.5) {
                 newStartOffset = initialStartOffset + (initialDuration - 0.5);
                 newDuration = 0.5;
                 newMediaStart = initialMediaStart + (initialDuration - 0.5);
-            } 
-            // 限制 2: 往左拉不能超過原始長度 (即 mediaStartOffset 不能小於 0)
-            else if (initialMediaStart + change < 0) {
+            } else if (initialMediaStart + change < 0) {
                 newMediaStart = 0;
                 newStartOffset = initialStartOffset - initialMediaStart;
                 newDuration = initialDuration + initialMediaStart;
-            }
-            else {
+            } else {
                 newStartOffset = tempStart;
                 newDuration = attemptedDuration;
-                // 🔥 關鍵：Trim Start 時，素材起始點也要跟著位移
                 newMediaStart = initialMediaStart + change;
             }
             
             if (newStartOffset < 0) {
                 newStartOffset = 0;
-                // 邊界處理簡化：如果頂到 0，就停止計算
-                const diff = 0 - (initialStartOffset + deltaSeconds);
-                // 這裡簡單處理：不讓 startOffset 小於 0
             }
         }
 
-        // 更新 Store (包含 mediaStartOffset)
         const updateLogic = (clips) => clips.map(c => c.id === resizingClipId ? { 
-            ...c, 
-            startOffset: newStartOffset, 
-            duration: newDuration,
-            mediaStartOffset: newMediaStart
+            ...c, startOffset: newStartOffset, duration: newDuration, mediaStartOffset: newMediaStart
         } : c);
 
         if (resizingTrack === 'main') {
@@ -209,6 +218,9 @@
     // --- Move Logic ---
     function startMoveClip(e, clip, trackType) {
         e.stopPropagation();
+        // 移動時也選中
+        selectedClipId.set(clip.id);
+
         movingClipId = clip.id;
         movingTrack = trackType;
         moveInitialX = e.clientX;
@@ -254,6 +266,9 @@
 
     // --- Scrubbing Logic ---
     function handleTimelineMouseDown(e) {
+        // 🔥 點擊背景時，取消選取 Clip
+        selectedClipId.set(null);
+
         updateTimeFromEvent(e);
         window.addEventListener('mousemove', handleTimelineMouseMove);
         window.addEventListener('mouseup', handleTimelineMouseUp);
@@ -272,6 +287,9 @@
         currentTime.set(newTime);
     }
 </script>
+
+<!-- 監聽全域鍵盤事件 -->
+<svelte:window on:keydown={handleKeyDown} />
 
 <!-- HTML 結構 -->
 <div class="h-[35%] bg-[#181818] border-t border-gray-700 flex flex-col relative select-none overflow-hidden">
@@ -323,7 +341,17 @@
                     </div>
                     <div class="flex-1 relative h-full bg-[#151515]">
                         {#each $mainTrackClips as clip (clip.id)}
-                            <div class="absolute top-2 bottom-2 rounded overflow-hidden border border-cyan-600 bg-cyan-900/50 group/clip cursor-move" style="left: {clip.startOffset * pixelsPerSecond}px; width: {clip.duration * pixelsPerSecond}px;" title={clip.name} on:mousedown={(e) => startMoveClip(e, clip, 'main')}>
+                            <!-- 🔥 修改：綁定 click 和 contextmenu 事件，並根據選取狀態加白框 -->
+                            <!-- svelte-ignore a11y-no-static-element-interactions -->
+                            <div 
+                                class="absolute top-2 bottom-2 rounded overflow-hidden border bg-cyan-900/50 group/clip cursor-move
+                                       { $selectedClipId === clip.id ? 'border-white ring-1 ring-white z-10' : 'border-cyan-600' }"
+                                style="left: {clip.startOffset * pixelsPerSecond}px; width: {clip.duration * pixelsPerSecond}px;" 
+                                title={clip.name} 
+                                on:mousedown={(e) => startMoveClip(e, clip, 'main')}
+                                on:click={(e) => selectClip(e, clip.id)}
+                                on:contextmenu={(e) => handleContextMenu(e, clip.id)}
+                            >
                                 <div class="w-full h-full flex items-center justify-center pointer-events-none">
                                     <span class="text-[10px] text-white truncate px-1">{clip.name} ({clip.duration.toFixed(1)}s)</span>
                                 </div>
@@ -339,7 +367,16 @@
                      <div class="w-24 shrink-0 border-r border-gray-700 flex items-center pl-3 text-xs text-gray-400 bg-[#181818] z-30 sticky left-0 h-full">Audio</div>
                     <div class="flex-1 bg-[#151515] relative h-full">
                         {#each $audioTrackClips as clip (clip.id)}
-                            <div class="absolute top-2 bottom-2 rounded overflow-hidden border border-green-600 bg-green-900/50 group/clip cursor-move" style="left: {clip.startOffset * pixelsPerSecond}px; width: {clip.duration * pixelsPerSecond}px;" title={clip.name} on:mousedown={(e) => startMoveClip(e, clip, 'audio')}>
+                            <!-- 🔥 Audio 軌道同樣修改 -->
+                            <div 
+                                class="absolute top-2 bottom-2 rounded overflow-hidden border bg-green-900/50 group/clip cursor-move
+                                       { $selectedClipId === clip.id ? 'border-white ring-1 ring-white z-10' : 'border-green-600' }"
+                                style="left: {clip.startOffset * pixelsPerSecond}px; width: {clip.duration * pixelsPerSecond}px;" 
+                                title={clip.name} 
+                                on:mousedown={(e) => startMoveClip(e, clip, 'audio')}
+                                on:click={(e) => selectClip(e, clip.id)}
+                                on:contextmenu={(e) => handleContextMenu(e, clip.id)}
+                            >
                                 <div class="w-full h-full flex items-center justify-center pointer-events-none">
                                     <span class="text-[10px] text-white truncate px-1">🎵 {clip.name} ({clip.duration.toFixed(1)}s)</span>
                                 </div>

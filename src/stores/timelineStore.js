@@ -4,6 +4,9 @@ import { writable } from 'svelte/store';
 export const mainTrackClips = writable([]);
 export const audioTrackClips = writable([]);
 
+// 🔥 新增：記錄當前被選中的 Clip ID
+export const selectedClipId = writable(null);
+
 export const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
 
 // 可以在這裡加一個 helper 確保新 clip 結構一致 (選用，但建議)
