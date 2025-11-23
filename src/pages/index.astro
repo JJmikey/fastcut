@@ -6,7 +6,7 @@ import Header from '../components/Header.svelte'; // 👈 副檔名變了
 import MediaSidebar from '../components/MediaSidebar.astro';
 import VideoPlayer from '../components/VideoPlayer.svelte'; 
 import Timeline from '../components/Timeline.svelte';   // ✅ 改用這個
-import PropertiesPanel from '../components/PropertiesPanel.astro';
+import PropertiesPanel from '../components/PropertiesPanel.svelte'; // 👈 副檔名變了
 import ProjectSaver from '../components/ProjectSaver.svelte';
 ---
 
@@ -26,8 +26,8 @@ import ProjectSaver from '../components/ProjectSaver.svelte';
       <Timeline client:load />
     </div>
 
-    <!-- 4. 右側 Sidebar -->
-    <PropertiesPanel slot="right-sidebar" />
+     <!-- 👇 加上 client:load 以啟用互動 -->
+    <PropertiesPanel slot="right-sidebar" client:load />
 
   </AppShell>
 </Layout>

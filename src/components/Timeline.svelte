@@ -1,5 +1,5 @@
 <script>
-    import { mainTrackClips, audioTrackClips, generateId, selectedClipId, draggedFile } from '../stores/timelineStore';
+    import { mainTrackClips, audioTrackClips, generateId, selectedClipId, draggedFile, createClip, splitClip } from '../stores/timelineStore'; // 🔥 引入 splitClip
     import { currentTime, isPlaying } from '../stores/playerStore';
     import { onMount } from 'svelte';
     import { get } from 'svelte/store'; // 用於讀取 draggedFile
@@ -80,30 +80,22 @@
             const fileData = JSON.parse(data);
             if (fileData.type.startsWith('audio')) { alert("Audio -> Audio Track"); return; }
             
-            // 嘗試獲取原始 File 物件 (為了 IndexedDB 存檔)
+            // 獲取原始檔案 (為了存檔)
             const actualFileObject = get(draggedFile); 
 
+            // 計算放置位置
             const currentMaxTime = $mainTrackClips.length > 0 ? Math.max(...$mainTrackClips.map(c => c.startOffset + c.duration)) : 0;
-            const originalDuration = fileData.duration || 5;
             
-            const newClip = { 
-                id: generateId(), 
-                fileUrl: fileData.url, 
-                name: fileData.name, 
-                type: fileData.type, 
-                startOffset: currentMaxTime, 
-                duration: originalDuration, 
-                sourceDuration: originalDuration,
-                mediaStartOffset: 0,
-                file: actualFileObject ? actualFileObject.file : null // 🔥 儲存原始檔案
-            };
+            // 🔥 修改：使用 helper 建立物件 (代碼變乾淨了！)
+            // 參數順序要對應 store 裡的定義：(fileData, startOffset, rawFile)
+            const newClip = createClip(fileData, currentMaxTime, actualFileObject ? actualFileObject.file : null);
             
             mainTrackClips.update(clips => {
                 const newClips = [...clips, newClip];
                 return resolveOverlaps(newClips, newClip.id); 
             });
             
-            draggedFile.set(null); // 清空暫存
+            draggedFile.set(null); 
         }
     }
 
@@ -117,19 +109,9 @@
             const actualFileObject = get(draggedFile);
 
             const currentMaxTime = $audioTrackClips.length > 0 ? Math.max(...$audioTrackClips.map(c => c.startOffset + c.duration)) : 0;
-            const originalDuration = fileData.duration || 5;
             
-            const newClip = { 
-                id: generateId(), 
-                fileUrl: fileData.url, 
-                name: fileData.name, 
-                type: fileData.type, 
-                startOffset: currentMaxTime, 
-                duration: originalDuration, 
-                sourceDuration: originalDuration,
-                mediaStartOffset: 0,
-                file: actualFileObject ? actualFileObject.file : null // 🔥 儲存原始檔案
-            };
+            // 🔥 修改：使用 helper
+            const newClip = createClip(fileData, currentMaxTime, actualFileObject ? actualFileObject.file : null);
             
             audioTrackClips.update(clips => {
                 const newClips = [...clips, newClip];
@@ -147,11 +129,22 @@
         audioTrackClips.update(clips => clips.filter(c => c.id !== $selectedClipId));
         selectedClipId.set(null);
     }
-    function handleKeyDown(e) { 
-        // 避免在輸入框打字時觸發刪除
+    
+    // 鍵盤快捷鍵 (Ctrl + B)
+    function handleKeyDown(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected(); 
+        
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            deleteSelected();
+        }
+        
+        // 🔥 新增快捷鍵
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+            e.preventDefault();
+            handleSplit();
+        }
     }
+
     function handleContextMenu(e, clipId) { e.preventDefault(); selectedClipId.set(clipId); deleteSelected(); }
     function selectClip(e, clipId) { e.stopPropagation(); selectedClipId.set(clipId); }
 
@@ -315,6 +308,26 @@
         const newTime = Math.max(0, timelineX / pixelsPerSecond);
         currentTime.set(newTime);
     }
+
+    // --- Split Logic ---
+    function handleSplit() {
+        // 必須先選中一個 Clip
+        if (!$selectedClipId) {
+            alert("請先點選要分割的片段");
+            return;
+        }
+        
+        // 呼叫 Store 的邏輯，傳入選中的 ID 和目前指針時間 ($currentTime)
+        splitClip($selectedClipId, $currentTime);
+        
+        // 分割後取消選取，避免誤操作
+        selectedClipId.set(null);
+    }
+    
+   
+
+
+
 </script>
 
 <!-- 監聽全域鍵盤事件 -->
@@ -322,14 +335,31 @@
 
 <div class="h-[35%] bg-[#181818] border-t border-gray-700 flex flex-col relative select-none overflow-hidden">
     
-    <!-- Zoom Toolbar -->
-    <div class="h-8 bg-[#252525] border-b border-gray-700 flex items-center px-4 justify-end gap-3 z-50 relative">
+   <!-- Toolbar -->
+   <div class="h-8 bg-[#252525] border-b border-gray-700 flex items-center px-4 justify-between z-50 relative">
+        
+    <!-- 🔥 左側：工具區 -->
+    <div class="flex items-center gap-2">
+        <button 
+            on:click={handleSplit}
+            class="text-gray-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-700 transition-colors text-xs"
+            title="Split (Ctrl+B)"
+        >
+            <!-- 剪刀 Icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" x2="8.12" y1="4" y2="15.88"/><line x1="14.47" x2="20" y1="14.48" y2="20"/><line x1="8.12" x2="12" y1="8.12" y2="12"/></svg>
+            Split
+        </button>
+    </div>
+
+    <!-- 右側：Zoom 區 (保持原本的) -->
+    <div class="flex items-center gap-3">
         <span class="text-xs text-gray-400">Zoom</span>
         <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
         <input type="range" min="10" max="100" step="5" bind:value={pixelsPerSecond} class="w-32 accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
         <svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         <span class="text-xs text-gray-500 w-8 text-right">{pixelsPerSecond}px</span>
     </div>
+</div>
 
     <!-- Timeline Container -->
     <div class="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative">

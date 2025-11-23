@@ -2,6 +2,7 @@
   import { startExportTrigger, isExporting } from '../stores/exportStore';
   // 👇 引入需要的 Store 和工具
   import { mainTrackClips, audioTrackClips } from '../stores/timelineStore';
+  import { selectedClipId, draggedFile } from '../stores/timelineStore'; // 🔥 記得引入這兩個
   import { currentTime, isPlaying } from '../stores/playerStore';
   import { clearProject } from '../utils/projectManager';
 
@@ -16,17 +17,24 @@
         return;
     }
 
-    // 2. 清除 IndexedDB
-    await clearProject();
-
-    // 3. 重置所有 Store 狀態
-    mainTrackClips.set([]);
+     // 1. 先清除 Store (這會觸發 AutoSave，但因為內容是空的，所以存進去也是空的，這是安全的)
+     mainTrackClips.set([]);
     audioTrackClips.set([]);
-    currentTime.set(0);
-    isPlaying.set(false);
+    
+    // 2. 清除其他狀態 (非常重要！這就是殘留的原因)
+    selectedClipId.set(null); // 清除選取框
+    draggedFile.set(null);    // 清除暫存檔
+    currentTime.set(0);       // 指針歸零
+    isPlaying.set(false);     // 停止播放
 
-    // 4. (選用) 重新整理頁面以釋放記憶體，或者只重置狀態也可以
-    // location.reload(); // 如果你想徹底清空記憶體，可以用這行
+    // 3. 等待 Store 更新傳播一下 (Svelte 是微任務更新)
+    await new Promise(r => setTimeout(r, 50));
+
+    // 4. 最後清除資料庫
+    // 這樣就算剛才 AutoSave 跑了，我們這裡也會再殺一次，確保乾淨
+    await clearProject();
+    
+    console.log("Project reset complete.");
   }
 </script>
 
