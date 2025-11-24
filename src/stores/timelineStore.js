@@ -42,9 +42,17 @@ export const createTextClip = (startOffset) => ({
     text: 'New Text',
     fontSize: 40,
     color: '#ffffff',
+    fontWeight: 'normal', // 新增屬性，預設不加粗
+     // 🔥 新增：字體屬性 (預設用 Arial)
+     fontFamily: '"Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
     x: 50, 
     y: 50,
-    volume: 1.0 
+    volume: 1.0 ,
+    // 🔥 新增：背景與邊框屬性
+    showBackground: false,      // 是否顯示背景
+    backgroundColor: '#38bdf8', // 背景顏色
+    strokeWidth: 2,             // 描邊寬度 (0 代表無)
+    strokeColor: '#FFFF00'      // 描邊顏色
 });
 
 // Helper: 解決重疊 (Ripple Edit)
