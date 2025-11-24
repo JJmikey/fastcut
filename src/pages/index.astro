@@ -1,33 +1,149 @@
 ---
-// src/pages/index.astro
 import Layout from '../layouts/Layout.astro';
-import AppShell from '../components/AppShell.astro';
-import Header from '../components/Header.svelte'; // 👈 副檔名變了
-import MediaSidebar from '../components/MediaSidebar.astro';
-import VideoPlayer from '../components/VideoPlayer.svelte'; 
-import Timeline from '../components/Timeline.svelte';   // ✅ 改用這個
-import PropertiesPanel from '../components/PropertiesPanel.svelte'; // 👈 副檔名變了
-import ProjectSaver from '../components/ProjectSaver.svelte';
+
+// 定義 Feature 資料
+const features = [
+  {
+    title: "Next-Gen WebCodecs",
+    desc: "Built on the absolute bleeding edge of browser technology. We use native GPU acceleration to render video instantly, bypassing slow server processing.",
+    // Icon: CPU/晶片圖示
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 9h6"/><path d="M9 15h6"/><path d="M15 9v6"/><path d="M9 9v6"/><path d="M3 9h-2"/><path d="M3 15h-2"/><path d="M21 9h2"/><path d="M21 15h2"/><path d="M9 3v-2"/><path d="M15 3v-2"/><path d="M9 21v2"/><path d="M15 21v2"/></svg>`
+  },
+  {
+    title: "Lossless Cutting",
+    desc: "We simply copy the data stream from start to end points. No re-encoding means no quality loss and blazing speed.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-cyan-400"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>`
+  },
+  {
+    title: "Local Privacy",
+    desc: "Your videos are processed locally in your browser via ＷebCodecs. Sensitive footage never hits a server.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
+  },
+  {
+    title: "Multi-Format Support",
+    desc: "MP4, AVI, MOV, MKV, and WEBM. If your browser can play it, we can cut it instantly.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-400"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`
+  },
+  {
+    title: "Mobile Friendly",
+    desc: "Works perfectly on iOS and Android browsers. Edit clips on the go without installing heavy apps. Feature coming soon.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-pink-400"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`
+  },
+  
+];
 ---
 
-<Layout>
-  <!-- 使用 AppShell 來管理佈局 -->
-  <AppShell>
-      <ProjectSaver client:only="svelte" slot="header" /> 
-    <!-- 1. 頂部 Header -->
-    <Header slot="header" client:load />
+<Layout title="FastVideoCutter - The Fastest Online Video Trimmer">
+  
+  <div class="bg-[#020617] min-h-screen text-slate-300 font-sans selection:bg-cyan-500 selection:text-white">
+    
+    <!-- Navbar -->
+    <nav class="fixed top-0 w-full z-50 border-b border-slate-800/60 bg-[#020617]/80 backdrop-blur-md">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <div class="flex items-center gap-2 cursor-pointer" onclick="window.location.href='/'">
+            <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/20">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            </div>
+            <span class="text-white font-bold text-xl tracking-tight">FastVideoCutter</span>
+          </div>
+          <div class="hidden md:block">
+            <div class="ml-10 flex items-baseline space-x-8">
+             
+            </div>
+          </div>
+          <div>
+            <a href="/editor" class="bg-white text-slate-900 hover:bg-slate-200 px-5 py-2.5 rounded-full font-bold text-sm transition-all transform hover:scale-105 shadow-lg shadow-white/10">
+              Start Cutting
+            </a>
+          </div>
+        </div>
+      </div>
+    </nav>
 
-    <!-- 2. 左側 Sidebar -->
-    <MediaSidebar slot="left-sidebar" />
+    <!-- Hero -->
+    <div class="relative pt-32 pb-20 sm:pt-40 sm:pb-24 overflow-hidden">
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full z-0 pointer-events-none">
+            <div class="absolute top-20 left-1/4 w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] mix-blend-screen"></div>
+            <div class="absolute top-40 right-1/4 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[100px] mix-blend-screen"></div>
+        </div>
 
-    <!-- 3. 中間區域 (這裡我們直接放入兩個元件，因為 AppShell 的 main 插槽是 flex-col) -->
-    <div slot="main" class="flex flex-col h-full">
-       <VideoPlayer client:load />
-      <Timeline client:load />
+        <div class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700 mb-8">
+                <span class="relative flex h-2 w-2">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                </span>
+                <span class="text-xs font-medium text-cyan-400">v2.0 Now Available with AI Auto-Trim</span>
+            </div>
+
+            <h1 class="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-6 leading-tight">
+                Trim Videos in <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300">Seconds</span>, <br class="hidden md:block" />
+                Not Hours.
+            </h1>
+
+            <p class="mt-4 max-w-2xl mx-auto text-lg md:text-xl text-slate-400 mb-10">
+                The fastest browser-based video cutter. No uploads, no quality loss, no watermarks. 
+                Edit your content instantly with our local processing engine.
+            </p>
+
+            <div class="flex flex-col sm:flex-row justify-center gap-4">
+                <a href="/editor" class="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all duration-200 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-lg hover:from-blue-500 hover:to-cyan-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-600 shadow-lg shadow-blue-500/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mr-2 -ml-1 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Upload Video
+                </a>
+                
+            </div>
+
+            <div class="mt-12 pt-8 border-t border-slate-800/50 grid grid-cols-3 gap-8 max-w-3xl mx-auto text-center">
+                <div>
+                    <div class="text-3xl font-bold text-white">100%</div>
+                    <div class="text-sm text-slate-500 mt-1">Private</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-white">0s</div>
+                    <div class="text-sm text-slate-500 mt-1">Upload Time</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-white">4K</div>
+                    <div class="text-sm text-slate-500 mt-1">Support</div>
+                </div>
+            </div>
+        </div>
     </div>
 
-     <!-- 👇 加上 client:load 以啟用互動 -->
-    <PropertiesPanel slot="right-sidebar" client:load />
+    <!-- Features -->
+    <div id="features" class="py-24 bg-[#020617] relative">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-5xl font-bold text-white mb-4">Built for Modern Creators</h2>
+                <p class="text-slate-400 max-w-2xl mx-auto">Everything you need to clip, trim, and ship your content faster than ever before.</p>
+            </div>
 
-  </AppShell>
+            <!-- 🔥 修正部分：使用 Astro 的 map 語法，並使用 set:html 注入 SVG -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {features.map(feature => (
+                    <div class="bg-slate-900/50 border border-slate-800 p-8 rounded-2xl hover:border-slate-600 transition-colors group">
+                        <!-- 使用 set:html 來渲染 SVG 字串 -->
+                        <div class="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300" set:html={feature.icon}>
+                        </div>
+                        <h3 class="text-xl font-bold text-white mb-3">{feature.title}</h3>
+                        <p class="text-slate-400 leading-relaxed text-sm">{feature.desc}</p>
+                    </div>
+                ))}
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-[#020617] border-t border-slate-800 py-12">
+        <div class="max-w-7xl mx-auto px-4 text-center text-slate-500 text-sm">
+            <p>&copy; 2025 FastVideoCutter. All rights reserved.</p>
+        </div>
+    </footer>
+
+  </div>
 </Layout>

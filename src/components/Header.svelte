@@ -31,13 +31,25 @@
 
 <header class="h-14 border-b border-gray-700 flex justify-between items-center px-4 bg-[#181818] flex-shrink-0">
   <div class="flex items-center gap-6">
-    <div class="flex items-center gap-2 cursor-pointer">
-      <div class="w-6 h-6 bg-cyan-600 rounded flex items-center justify-center font-bold text-white text-xs">F</div>
-      <span class="text-gray-100 font-bold text-lg">Fast video cutter</span>
-    </div>
+
+
+
+     <!-- 🔥 修改開始：Logo 區域 (連結回首頁) -->
+    <a href="/" class="flex items-center gap-2 cursor-pointer hover:opacity-90 transition-opacity text-decoration-none">
+        <!-- 圖標 -->
+        <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/20">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/>
+                <line x1="3" y1="6" x2="21" y2="6"/>
+                <path d="M16 10a4 4 0 0 1-8 0"/>
+            </svg>
+        </div>
+        <!-- 文字 -->
+        <span class="text-white font-bold text-xl tracking-tight">FastVideoCutter</span>
+    </a>
+    <!-- 🔥 修改結束 -->
     
-    <div class="h-4 w-[1px] bg-gray-600"></div>
-    <span class="text-sm text-gray-400">Untitled Project</span>
+    
 
     <button 
         on:click={handleNewProject}

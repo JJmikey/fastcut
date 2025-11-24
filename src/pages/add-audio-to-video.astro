@@ -1,0 +1,79 @@
+---
+// 1. 引入 Layout 和 AppShell (外殼)
+import Layout from '../layouts/Layout.astro';
+import AppShell from '../components/AppShell.astro';
+
+// 2. 引入編輯器組件 (核心功能)
+// 這樣這個頁面依然擁有完整的剪輯功能！
+import Header from '../components/Header.svelte';
+import MediaSidebar from '../components/MediaSidebar.astro';
+import VideoPlayer from '../components/VideoPlayer.svelte';
+import Timeline from '../components/Timeline.svelte';
+import PropertiesPanel from '../components/PropertiesPanel.svelte';
+import ProjectSaver from '../components/ProjectSaver.svelte';
+---
+
+<!-- 設定這個頁面專屬的 Title (這對 SEO 很重要) -->
+<Layout title="Add Audio to Video Online - Merge MP3 & MP4 | FastVideoCutter">
+  
+  <AppShell>
+    <!-- A. 放入編輯器功能 (跟首頁一模一樣) -->
+    <ProjectSaver client:only="svelte" slot="header" />
+    <Header slot="header" client:load />
+    <MediaSidebar slot="left-sidebar" />
+    
+    <div slot="main" class="flex flex-col h-full">
+      <VideoPlayer client:load />
+      <Timeline client:load />
+    </div>
+
+    <PropertiesPanel slot="right-sidebar" client:load />
+
+
+    <!-- 
+        B. 🔥🔥🔥 關鍵在這裡！ 🔥🔥🔥
+        使用 slot="seo-content"
+        這段內容會「覆蓋」掉 AppShell 裡原本首頁的文字
+    -->
+    <div slot="seo-content" class="prose prose-invert max-w-4xl mx-auto">
+      
+      <!-- 專屬的 H1 標題 -->
+      <h1 class="text-4xl font-bold text-white mb-6">Add Audio to Video Online for Free</h1>
+      
+      <p class="text-gray-400 text-lg leading-relaxed mb-8">
+        Do you want to <strong class="text-cyan-400">merge background music with your video</strong>? 
+        FastVideoCutter makes it easy. Just drag and drop, no complex software required.
+      </p>
+
+      <div class="grid md:grid-cols-2 gap-8 my-12">
+        <div class="bg-[#1e1e1e] p-6 rounded-lg border border-gray-700">
+            <h3 class="text-xl font-bold text-white mb-2">🎵 Support All Formats</h3>
+            <p class="text-gray-400 text-sm">MP3, WAV, AAC, M4A supported. Combine them with MP4, MOV, or WebM videos.</p>
+        </div>
+        <div class="bg-[#1e1e1e] p-6 rounded-lg border border-gray-700">
+            <h3 class="text-xl font-bold text-white mb-2">⚡️ Instant Merge</h3>
+            <p class="text-gray-400 text-sm">We define audio merging as a local process. No upload waiting time.</p>
+        </div>
+      </div>
+
+      <h2 class="text-2xl font-bold text-white mt-12 mb-4">How to add music to video?</h2>
+      <ol class="list-decimal pl-5 text-gray-400 space-y-2">
+        <li>Upload your video files and your music files.</li>
+        <li>Drag the video to the <strong>Video Track</strong>.</li>
+        <li>Drag the audio file to the <strong>Audio Track</strong>.</li>
+        <li>Use the <strong>Properties Panel</strong> to adjust volume balance.</li>
+        <li>Export to MP4.</li>
+      </ol>
+
+      <div class="mt-12 p-6 bg-blue-900/20 border border-blue-800 rounded-lg">
+        <h3 class="text-lg font-bold text-white mb-2">Pro Tip:</h3>
+        <p class="text-gray-400 text-sm">
+            You can trim the audio to match the video length by dragging the edge of the green audio clip in the timeline.
+        </p>
+      </div>
+
+    </div>
+    <!-- End of SEO Content Slot -->
+
+  </AppShell>
+</Layout>
