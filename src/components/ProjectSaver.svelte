@@ -1,7 +1,7 @@
 <script>
     import { onMount } from 'svelte';
-    // 🔥 引入 uploadedFiles
-    import { mainTrackClips, audioTrackClips, uploadedFiles } from '../stores/timelineStore';
+    // 🔥 引入 textTrackClips
+    import { mainTrackClips, audioTrackClips, textTrackClips, uploadedFiles } from '../stores/timelineStore';
     import { saveProject, loadProject } from '../utils/projectManager';
 
     onMount(async () => {
@@ -29,20 +29,17 @@
             }, 1000);
         };
 
+        // 訂閱所有 Store
         const unsubscribeMain = mainTrackClips.subscribe(autoSave);
         const unsubscribeAudio = audioTrackClips.subscribe(autoSave);
-        // 🔥 訂閱素材庫變動
+        const unsubscribeText = textTrackClips.subscribe(autoSave); // 🔥 監聽文字變動
         const unsubscribeFiles = uploadedFiles.subscribe(autoSave);
 
         return () => {
             unsubscribeMain();
             unsubscribeAudio();
+            unsubscribeText(); // 🔥 記得取消訂閱
             unsubscribeFiles();
         };
     });
 </script>
-
-<!-- 為了測試，我們加一個臨時按鈕，確定它真的有渲染出來 -->
-<div class="fixed bottom-4 right-4 z-50 bg-red-600 text-white px-2 py-1 text-xs rounded opacity-50 hover:opacity-100 cursor-pointer" on:click={() => saveProject()}>
-    Force Save (Debug)
-</div>

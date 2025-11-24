@@ -1,6 +1,6 @@
 import { openDB } from 'idb';
-// 引入所有需要管理的 Store
-import { mainTrackClips, audioTrackClips, uploadedFiles } from '../stores/timelineStore';
+// 🔥 引入 textTrackClips
+import { mainTrackClips, audioTrackClips, textTrackClips, uploadedFiles } from '../stores/timelineStore';
 import { get } from 'svelte/store';
 
 const DB_NAME = 'CapCutCloneDB';
@@ -24,11 +24,13 @@ export async function saveProject() {
     
     const mainClips = get(mainTrackClips);
     const audioClips = get(audioTrackClips);
+    const textClips = get(textTrackClips); // 🔥 取得文字軌道
     const libraryFiles = get(uploadedFiles);
 
     const projectData = {
         main: mainClips,
         audio: audioClips,
+        text: textClips, // 🔥 存入資料庫
         files: libraryFiles,
         lastModified: Date.now()
     };
@@ -69,16 +71,18 @@ export async function loadProject() {
                     thumbnailUrls: restoredThumbnails.length > 0 ? restoredThumbnails : (item.thumbnailUrls || [])
                 };
             }
-            return item;
+            return item; // 對於 Text Clip，沒有 file blob，直接回傳即可
         });
     };
 
     const restoredMain = restoreAssets(data.main || []);
     const restoredAudio = restoreAssets(data.audio || []);
+    const restoredText = restoreAssets(data.text || []); // 🔥 恢復文字軌道
     const restoredLibrary = restoreAssets(data.files || []);
 
     mainTrackClips.set(restoredMain);
     audioTrackClips.set(restoredAudio);
+    textTrackClips.set(restoredText); // 🔥 寫回 Store
     uploadedFiles.set(restoredLibrary);
     
     return true;
@@ -87,11 +91,10 @@ export async function loadProject() {
 // 🔥 清除專案 (New Project)
 export async function clearProject() {
     const db = await initDB();
-    // 1. 刪除資料庫紀錄
     await db.delete(STORE_NAME, PROJECT_KEY);
     
-    // 2. 清空 Store (雖然 reload 會重置，但這是好習慣)
     mainTrackClips.set([]);
     audioTrackClips.set([]);
+    textTrackClips.set([]); // 🔥 清空 Store
     uploadedFiles.set([]); 
 }
