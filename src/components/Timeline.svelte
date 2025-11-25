@@ -3,14 +3,16 @@
     import { currentTime, isPlaying, currentVideoSource } from '../stores/playerStore';
     import { onMount } from 'svelte';
     import { get } from 'svelte/store';
-    import { splitClip, resolveOverlaps } from '../stores/timelineStore';
+    import { splitClip } from '../stores/timelineStore'; // 確保 splitClip 也有引入
 
     let pixelsPerSecond = 20; 
     let timelineContainer; 
     let scrollContainer;
     
+    // --- 狀態變數 ---
     let totalDuration = 60;     
     
+    // Resize 變數
     let resizingClipId = null;  
     let resizingTrack = null; 
     let resizingEdge = null;  
@@ -20,13 +22,15 @@
     let initialMediaStart = 0; 
     let maxDurationLimit = 0;   
     
+    // Move 變數
     let movingClipId = null;
     let movingTrack = null;
     let moveInitialX = 0;
     let moveInitialStart = 0;
-    // 🔥 新增：用來記錄多選移動時，每一塊 Clip 的初始位置
+    // 🔥 新增：記錄多選移動時，每個 Clip 的初始位置
     let groupInitialOffsets = {}; 
 
+    // UI 輔助
     let isSelecting = false;
     let selectStartX = 0;
     let selectStartY = 0;
@@ -36,6 +40,15 @@
     let guideX = 0;           
     let guideTimeText = "";   
 
+    // 軌道 Y 軸位置常數 (用於框選判定)
+    const TRACK_Y = { RULER: 24, TEXT: 64, MAIN: 96, AUDIO: 64 };
+    const TRACK_BOUNDS = {
+        text: { top: TRACK_Y.RULER, bottom: TRACK_Y.RULER + TRACK_Y.TEXT },
+        main: { top: TRACK_Y.RULER + TRACK_Y.TEXT, bottom: TRACK_Y.RULER + TRACK_Y.TEXT + TRACK_Y.MAIN },
+        audio: { top: TRACK_Y.RULER + TRACK_Y.TEXT + TRACK_Y.MAIN, bottom: TRACK_Y.RULER + TRACK_Y.TEXT + TRACK_Y.MAIN + TRACK_Y.AUDIO }
+    };
+
+    // --- Reactive: 計算總長度 ---
     $: {
         const maxMain = $mainTrackClips.length > 0 ? Math.max(...$mainTrackClips.map(c => c.startOffset + c.duration)) : 0;
         const maxAudio = $audioTrackClips.length > 0 ? Math.max(...$audioTrackClips.map(c => c.startOffset + c.duration)) : 0;
@@ -46,6 +59,33 @@
 
     function switchToTimeline() { currentVideoSource.set(null); }
     function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
+
+    // --- Ripple Logic ---
+    function resolveOverlaps(clips, activeId = null) {
+        if (clips.length === 0) return [];
+        const sortedClips = [...clips].sort((a, b) => {
+            if (a.id === b.id) return 0;
+            const diff = a.startOffset - b.startOffset;
+            // 優先讓主動操作的 Clip 排在前面
+            if (Math.abs(diff) < 0.1) {
+                // 如果正在多選移動，activeId 可能是 null 或 undefined (或是只傳了一個)，
+                // 這裡主要處理 Drop 或 Single Move 的情況。
+                // 對於 Batch Move，通常依靠時間排序即可。
+                if (a.id === activeId) return -1; 
+                if (b.id === activeId) return 1; 
+            }
+            return diff;
+        });
+        for (let i = 1; i < sortedClips.length; i++) {
+            const prevClip = sortedClips[i - 1];
+            const currentClip = sortedClips[i];
+            const prevEnd = prevClip.startOffset + prevClip.duration;
+            if (currentClip.startOffset < prevEnd) {
+                currentClip.startOffset = prevEnd; 
+            }
+        }
+        return sortedClips;
+    }
 
     // --- Drop Logic ---
     function handleDrop(e) {
@@ -65,8 +105,8 @@
                 sourceDuration: isImage ? Infinity : originalDuration,
                 mediaStartOffset: 0, volume: 1.0, 
                 file: actualFileObject ? actualFileObject.file : null,
-                thumbnailUrls: fileData.thumbnailUrls,
-                thumbnails: actualFileObject ? actualFileObject.thumbnails : []
+                thumbnails: actualFileObject ? actualFileObject.thumbnails : [], // 確保有存 thumbnails
+                thumbnailUrls: fileData.thumbnailUrls 
             };
             mainTrackClips.update(clips => resolveOverlaps([...clips, newClip], newClip.id));
             draggedFile.set(null); 
@@ -96,55 +136,36 @@
 
     // --- Split & Delete ---
     function handleSplit() {
-        if (!$selectedClipIds || $selectedClipIds.length !== 1) { alert("請只選取一個片段進行分割"); return; }
+        if (!$selectedClipIds || $selectedClipIds.length !== 1) { alert("Please select a clip to split."); return; }
         resetSourceMode();
         splitClip($selectedClipIds[0], $currentTime);
         selectedClipIds.set([]);
     }
-    
     function deleteSelected() {
         if ($selectedClipIds.length === 0) return;
-        
-        // 🔥 刪除所有被選中的 ID
         mainTrackClips.update(clips => clips.filter(c => !$selectedClipIds.includes(c.id)));
         audioTrackClips.update(clips => clips.filter(c => !$selectedClipIds.includes(c.id)));
         textTrackClips.update(clips => clips.filter(c => !$selectedClipIds.includes(c.id)));
-        
         selectedClipIds.set([]);
     }
-
     function handleKeyDown(e) { 
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected(); 
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); handleSplit(); }
     }
-
-    // 🔥 修改：右鍵選單邏輯 (智慧判斷多選)
     function handleContextMenu(e, clipId) { 
         e.preventDefault(); 
         resetSourceMode(); 
-        
-        // 如果點擊的 Clip 不在目前的選取範圍內，則單選它
-        // (如果已經在範圍內，就保持多選狀態，方便批次刪除)
-        if (!$selectedClipIds.includes(clipId)) {
-            selectedClipIds.set([clipId]); 
-        }
-        
+        if (!$selectedClipIds.includes(clipId)) selectedClipIds.set([clipId]); 
         deleteSelected(); 
     }
-
-    // 🔥 修改：左鍵選取邏輯
     function selectClip(e, clipId) { 
         e.stopPropagation(); 
         resetSourceMode();
         if (e.shiftKey) {
             selectedClipIds.update(ids => ids.includes(clipId) ? ids.filter(id => id !== clipId) : [...ids, clipId]);
         } else {
-            // 如果沒按 Shift 且該 Clip 未被選中，則單選
-            // (注意：如果已選中，這裡不做動作，以免在 startMoveClip 前把多選清掉)
-            if (!$selectedClipIds.includes(clipId)) {
-                selectedClipIds.set([clipId]);
-            }
+            if (!$selectedClipIds.includes(clipId)) selectedClipIds.set([clipId]);
         }
     }
     function resetSourceMode() { currentVideoSource.set(null); }
@@ -153,7 +174,7 @@
     function startResize(e, clip, trackType, edge) {
         e.stopPropagation();
         resetSourceMode();
-        selectedClipIds.set([clip.id]); // 縮放時強制單選
+        selectedClipIds.set([clip.id]);
         resizingClipId = clip.id;
         resizingTrack = trackType;
         resizingEdge = edge; 
@@ -229,35 +250,38 @@
         window.removeEventListener('mouseup', stopResize);
     }
 
-    // --- 🔥 修改：Move Logic (支援整組移動) ---
+    // --- 🔥 Move Logic (Batch Move Fix) ---
     function startMoveClip(e, clip, trackType) {
         e.stopPropagation();
         resetSourceMode();
         
-        // 邏輯：如果點擊的 Clip 已經被選取，就不要清除選取 (準備拖曳整組)
-        // 如果沒被選取，且沒按 Shift，才變成單選
-        if (!$selectedClipIds.includes(clip.id) && !e.shiftKey) {
-            selectedClipIds.set([clip.id]);
-        } else if (!$selectedClipIds.includes(clip.id) && e.shiftKey) {
-            selectedClipIds.update(ids => [...ids, clip.id]);
-        }
+        // 檢查選取狀態
+        if (!$selectedClipIds.includes(clip.id)) {
+            if (!e.shiftKey) selectedClipIds.set([clip.id]); // 單選
+            else selectedClipIds.update(ids => [...ids, clip.id]); // 加選
+        } 
+        // 如果已經選中，且按了 Shift，則不做動作（保持選中狀態以便拖曳）
 
         movingClipId = clip.id;
         movingTrack = trackType;
         moveInitialX = e.clientX;
         moveInitialStart = clip.startOffset;
-        
-        // 🔥 記錄所有選中 Clips 的初始位置
+
+        // 🔥 關鍵：快照所有選中 Clip 的初始位置
         groupInitialOffsets = {};
-        const allClips = [...get(mainTrackClips), ...get(audioTrackClips), ...get(textTrackClips)];
-        
-        // 這裡我們使用 get(selectedClipIds) 確保拿到最新值
         const currentSelected = get(selectedClipIds);
-        allClips.forEach(c => {
-            if (currentSelected.includes(c.id)) {
-                groupInitialOffsets[c.id] = c.startOffset;
-            }
-        });
+        
+        // 遍歷所有軌道收集初始位置
+        const collectOffsets = (clips) => {
+            clips.forEach(c => {
+                if (currentSelected.includes(c.id)) {
+                    groupInitialOffsets[c.id] = c.startOffset;
+                }
+            });
+        };
+        collectOffsets(get(mainTrackClips));
+        collectOffsets(get(audioTrackClips));
+        collectOffsets(get(textTrackClips));
 
         showGuide = true;
         window.addEventListener('mousemove', handleMoveClip);
@@ -269,9 +293,13 @@
         const deltaX = e.clientX - moveInitialX;
         const deltaSeconds = deltaX / pixelsPerSecond;
         
-        // 🔥 批次更新：根據每個 Clip 自己的初始位置 + delta
+        // 🔥 批次更新：所有選中的 Clip 都根據其初始位置 + delta 移動
+        // 使用 Math.max(0, ...) 確保不移出左邊界
+        // 這裡我們需要檢查整個群組是否有人撞牆 (Optional: 但簡單起見，各自撞牆即可)
+        
         const updateBatch = (clips) => clips.map(c => {
-            if ($selectedClipIds.includes(c.id) && groupInitialOffsets[c.id] !== undefined) {
+            // 如果這個 clip 在被選中的群組裡
+            if (groupInitialOffsets[c.id] !== undefined) {
                 const newStart = Math.max(0, groupInitialOffsets[c.id] + deltaSeconds);
                 return { ...c, startOffset: newStart };
             }
@@ -282,7 +310,7 @@
         audioTrackClips.update(updateBatch);
         textTrackClips.update(updateBatch);
 
-        // 讓指針跟隨主要拖曳的那個 Clip
+        // 更新指針和 Guide
         const currentStart = Math.max(0, moveInitialStart + deltaSeconds);
         currentTime.set(currentStart);
         guideX = e.clientX;
@@ -290,13 +318,14 @@
     }
 
     function stopMoveClip() {
-        // 放下後執行重排 (對所有軌道)
+        // 移動結束後，對所有軌道執行重排
+        // 這裡不指定 activeId，讓它們自然落位
         mainTrackClips.update(clips => resolveOverlaps(clips));
         audioTrackClips.update(clips => resolveOverlaps(clips));
         textTrackClips.update(clips => resolveOverlaps(clips));
 
         movingClipId = null; movingTrack = null; showGuide = false;
-        groupInitialOffsets = {};
+        groupInitialOffsets = {}; // 清空快照
         window.removeEventListener('mousemove', handleMoveClip);
         window.removeEventListener('mouseup', stopMoveClip);
     }
@@ -340,17 +369,29 @@
 
         const startTime = x / pixelsPerSecond;
         const endTime = (x + width) / pixelsPerSecond;
-        const newSelected = [];
         
-        const checkOverlap = (clips) => {
-            clips.forEach(clip => {
-                const clipEnd = clip.startOffset + clip.duration;
-                if (clip.startOffset < endTime && clipEnd > startTime) newSelected.push(clip.id);
+        // Y 軸碰撞檢測
+        const boxTop = y;
+        const boxBottom = y + height;
+        const isYOverlap = (track) => boxTop < track.bottom && boxBottom > track.top;
+
+        const newSelected = [];
+
+        if (isYOverlap(TRACK_BOUNDS.text)) {
+            $textTrackClips.forEach(clip => {
+                if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
             });
-        };
-        checkOverlap($mainTrackClips);
-        checkOverlap($audioTrackClips);
-        checkOverlap($textTrackClips);
+        }
+        if (isYOverlap(TRACK_BOUNDS.main)) {
+            $mainTrackClips.forEach(clip => {
+                if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
+            });
+        }
+        if (isYOverlap(TRACK_BOUNDS.audio)) {
+            $audioTrackClips.forEach(clip => {
+                if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
+            });
+        }
         selectedClipIds.set(newSelected);
     }
 
@@ -361,7 +402,6 @@
         window.removeEventListener('mouseup', stopMarquee);
     }
 
-    // Scrubbing Helpers
     function handleTimelineMouseMove(e) { updateTimeFromEvent(e); }
     function handleTimelineMouseUp() { window.removeEventListener('mousemove', handleTimelineMouseMove); window.removeEventListener('mouseup', handleTimelineMouseUp); }
     function updateTimeFromEvent(e) {
@@ -377,7 +417,6 @@
 
 <div class="h-[35%] bg-[#181818] border-t border-gray-700 flex flex-col relative select-none overflow-hidden">
     
-    <!-- Toolbar -->
     <div class="h-8 bg-[#252525] border-b border-gray-700 flex items-center px-4 justify-between z-50 relative">
         <div class="flex items-center gap-2">
             <button on:click={handleSplit} class="text-gray-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-700 transition-colors text-xs" title="Split (Ctrl+B)">
@@ -395,7 +434,6 @@
     <div bind:this={scrollContainer} class="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative">
         <div bind:this={timelineContainer} class="relative h-full flex flex-col min-w-full" style="width: {totalDuration * pixelsPerSecond + 100}px;" on:mousedown={handleTimelineMouseDown}>
 
-            <!-- Ruler -->
             <div class="h-6 border-b border-gray-700 flex text-[10px] text-gray-500 bg-[#181818] sticky left-0 z-20 pointer-events-none">
                 <div class="w-24 border-r border-gray-700 shrink-0 bg-[#181818] sticky left-0 z-30"></div> 
                 <div class="flex-1 relative">
@@ -405,7 +443,6 @@
                 </div>
             </div>
 
-            <!-- Playhead -->
             <div class="absolute top-0 bottom-0 w-[1px] bg-cyan-400 z-40 pointer-events-none will-change-transform" style="left: 0; transform: translateX({96 + ($currentTime * pixelsPerSecond)}px) translateZ(0);">
                 <div class="absolute top-0 left-1/2 -translate-x-1/2 w-3 h-3 -mt-1.5 rotate-45 bg-cyan-400 rounded-sm"></div>
             </div>
@@ -450,7 +487,7 @@
                                         {/each}
                                     </div>
                                 {/if}
-                                <div class="w-full h-full flex items-center justify-center pointer-events-none relative z-10"><span class="text-[10px] text-white truncate px-1 drop-shadow-md font-medium">{clip.name}</span></div>
+                                <div class="w-full h-full flex items-center justify-center pointer-events-none relative z-10"><span class="text-[10px] text-white truncate px-1 drop-shadow-md font-medium">{clip.name} ({clip.duration.toFixed(1)}s)</span></div>
                                 <div class="absolute top-0 bottom-0 left-0 w-4 cursor-ew-resize z-50 hover:bg-cyan-400/50 transition-colors flex items-center justify-center" on:mousedown={(e) => startResize(e, clip, 'main', 'start')} on:click|stopPropagation><div class="w-[2px] h-4 bg-white/50 rounded-full"></div></div>
                                 <div class="absolute top-0 bottom-0 right-0 w-4 cursor-ew-resize z-50 hover:bg-cyan-400/50 transition-colors flex items-center justify-center" on:mousedown={(e) => startResize(e, clip, 'main', 'end')} on:click|stopPropagation><div class="w-[2px] h-4 bg-white/50 rounded-full"></div></div>
                             </div>

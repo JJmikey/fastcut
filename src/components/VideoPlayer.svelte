@@ -164,10 +164,9 @@
                     }
                 }
 
-                // 🔥 繪製文字 (Render Layer - 修正順序)
+                // 繪製文字 (Render Layer - 修正順序)
                 if (activeText) {
-                    // 使用 bold + 字體設定
-                    ctx.font = `bold ${activeText.fontSize}px ${activeText.fontFamily || 'Arial, sans-serif'}`;
+                    ctx.font = `${activeText.fontWeight || 'bold'} ${activeText.fontSize}px ${activeText.fontFamily || 'Arial, sans-serif'}`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     
@@ -185,17 +184,16 @@
                         ctx.fillRect(x - textWidth/2 - padding, y - textHeight/2 - padding, textWidth + padding*2, textHeight + padding*2);
                     }
 
-                    // B. 🔥 關鍵：先畫描邊 (Stroke First)
-                    // 這樣描邊的一半會被文字本體蓋住，字形就不會變瘦變糊
+                    // B. 先畫描邊 (Stroke First)
                     if (activeText.strokeWidth > 0) {
-                        ctx.lineJoin = 'round'; // 圓角連接，防止尖刺
+                        ctx.lineJoin = 'round'; 
                         ctx.miterLimit = 2;
                         ctx.lineWidth = activeText.strokeWidth;
                         ctx.strokeStyle = activeText.strokeColor;
                         ctx.strokeText(activeText.text, x, y);
                     }
 
-                    // C. 🔥 最後：畫文字本體 (Fill Second)
+                    // C. 最後畫文字本體 (Fill Second)
                     ctx.fillStyle = activeText.color;
                     ctx.fillText(activeText.text, x, y);
                 }
@@ -212,8 +210,13 @@
             const { buffer } = muxer.target;
             const blob = new Blob([buffer], { type: 'video/mp4' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; a.download = `capcut_edit_${Date.now()}.mp4`;
-            document.body.appendChild(a); a.click();
+            
+            const a = document.createElement('a'); 
+            a.href = url; 
+            a.download = `fastvideocutter_export_${Date.now()}.mp4`;
+            
+            document.body.appendChild(a); 
+            a.click();
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); isExporting.set(false); startExportTrigger.set(0); }, 1000);
 
         } catch (err) {
@@ -255,12 +258,16 @@
         const length = inputL.length + inputR.length;
         const result = new Float32Array(length);
         let index = 0, inputIndex = 0;
-        while (index < length) { result[index++] = inputL[inputIndex]; result[index++] = inputR[inputIndex]; inputIndex++; }
+        while (index < length) {
+            result[index++] = inputL[inputIndex];
+            result[index++] = inputR[inputIndex];
+            inputIndex++;
+        }
         return result;
     }
 
     // ============================================================
-    // Preview Logic
+    // UI Preview Logic
     // ============================================================
     
     $: isSourceMode = !!$currentVideoSource;
@@ -268,7 +275,7 @@
     $: activeAudioClip = $audioTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
     $: activeTextClip = $textTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
 
-    // 1. Video/Image Sync
+    // 1. Sync Video / Image Source (解耦播放控制)
     $: if (!$isExporting && !isSourceMode) {
         if (activeClip) {
             if (activeClip.type.startsWith('video')) {
@@ -276,6 +283,8 @@
                     if (!videoRef.src.includes(activeClip.fileUrl)) videoRef.src = activeClip.fileUrl;
                     videoRef.volume = activeClip.volume !== undefined ? activeClip.volume : 1.0;
                     const seekTime = ($currentTime - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
+                    
+                    // 只有在暫停時，或者誤差極大時才 Seek，避免與 Loop 衝突
                     if (!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) {
                         videoRef.currentTime = seekTime;
                     }
@@ -289,12 +298,13 @@
         }
     }
 
-    // 2. Audio Sync
+    // 2. Sync Audio Source (解耦播放控制)
     $: if (!$isExporting && !isSourceMode) {
         if (activeAudioClip && audioRef) {
             if (!audioRef.src.includes(activeAudioClip.fileUrl)) audioRef.src = activeAudioClip.fileUrl;
             audioRef.volume = activeAudioClip.volume !== undefined ? activeAudioClip.volume : 1.0;
             const audioSeekTime = ($currentTime - activeAudioClip.startOffset) + (activeAudioClip.mediaStartOffset || 0);
+            
             if (!$isPlaying || Math.abs(audioRef.currentTime - audioSeekTime) > 0.25) {
                 audioRef.currentTime = audioSeekTime;
             }
@@ -303,7 +313,7 @@
         }
     }
 
-    // 3. Source Preview Mode
+    // 3. Source Preview Mode Logic
     $: if (isSourceMode && !$isExporting) {
         const src = $currentVideoSource;
         if (src.type.startsWith('video')) {
@@ -322,23 +332,22 @@
         }
     }
 
-    // 4. Play/Pause Commands (Decoupled)
+    // 4. 🔥 Play/Pause Control (獨立的控制邏輯)
     $: if (!$isExporting) {
         if ($isPlaying && !isSourceMode) {
-            // Timeline Mode Play
+            // Timeline 模式播放
             if (videoRef && activeClip && activeClip.type.startsWith('video')) videoRef.play().catch(() => {});
             if (audioRef && activeAudioClip) audioRef.play().catch(() => {});
         } else if (isSourceMode) {
-            // Source Mode Play (Already handled in #3 logic mostly, but ensuring sync)
-            // Keep source playing
+            // Source 模式由上面邏輯處理自動播放，這裡不強制干涉
         } else {
-            // Pause All
+            // 暫停
             if (videoRef) videoRef.pause();
             if (audioRef) audioRef.pause();
         }
     }
 
-    // 5. Loop Logic
+    // 5. 🔥 Loop Logic (只依賴 isPlaying，不依賴 activeClip)
     $: if ($isPlaying && !$isExporting && !isSourceMode) {
         lastTime = performance.now();
         requestAnimationFrame(loop);
@@ -358,9 +367,11 @@
     function loop(timestamp) {
         if (!$isPlaying || $isExporting || isSourceMode) return;
         if (contentDuration === 0) { isPlaying.set(false); currentTime.set(0); return; }
+        
         const deltaTime = (timestamp - lastTime) / 1000;
         lastTime = timestamp;
         currentTime.update(t => t + deltaTime);
+        
         if ($currentTime >= contentDuration) {
             isPlaying.set(false);
             currentTime.set(contentDuration);
@@ -372,9 +383,7 @@
     function handleDragStart(e) {
         const source = isSourceMode ? $currentVideoSource : activeClip;
         if (!source) { e.preventDefault(); return; }
-        // 儲存原始資料
         if (source.file) draggedFile.set({ file: source.file, thumbnails: source.thumbnails });
-        
         const dragData = JSON.stringify({
             url: source.url || source.fileUrl, name: source.name, type: source.type,
             duration: source.sourceDuration || source.duration || 5,
@@ -395,7 +404,7 @@
         on:dragstart={handleDragStart}
         on:click={togglePlay}
     >
-        <!-- Video -->
+        <!-- Video Element -->
         <video 
             bind:this={videoRef} 
             class="max-w-full max-h-full object-contain pointer-events-none 
@@ -404,7 +413,7 @@
             crossorigin="anonymous"
         ></video>
 
-        <!-- Image -->
+        <!-- Image Element -->
         <img 
             bind:this={imageRef}
             class="max-w-full max-h-full object-contain pointer-events-none 
@@ -428,7 +437,7 @@
                     font-size: {activeTextClip.fontSize}px;
                     color: {activeTextClip.color};
                     font-family: {activeTextClip.fontFamily || 'Arial, sans-serif'};
-                    font-weight: bold;
+                    font-weight: {activeTextClip.fontWeight || 'bold'};
                     white-space: pre-wrap;
                     
                     /* 🔥 使用 paint-order 確保描邊在後面 */
