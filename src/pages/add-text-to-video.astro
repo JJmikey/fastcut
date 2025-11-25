@@ -1,0 +1,47 @@
+---
+import MarketingLayout from '../layouts/MarketingLayout.astro';
+
+const features = [
+  {
+    title: "Custom Text Styles",
+    desc: "Choose fonts, adjust size, change colors, and add professional strokes/outlines to your text.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-400"><path d="M7 4v16M17 4v16M3 8h4M17 8h4M7 12h10"/></svg>`
+  },
+  {
+    title: "Background Box",
+    desc: "Add a solid background box behind your text to make subtitles readable on any video footage.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/></svg>`
+  },
+  {
+    title: "Watermark Your Video",
+    desc: "Protect your content by adding your brand name or handle as a permanent text overlay.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-pink-400"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`
+  }
+];
+---
+
+<MarketingLayout
+  title="Add Text to Video Online - Subtitles & Watermarks | FastVideoCutter"
+  heroBadge="Text Editor"
+  heroTitle='Add Text & Subtitles <span class="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500">Online</span>'
+  heroSubtitle="Easily add captions, subtitles, or watermarks to your videos directly in your browser. Customize fonts, colors, and backgrounds."
+  features={features}
+>
+
+  <h2 class="text-2xl font-bold text-white mt-8 mb-4">Free Online Video Text Editor</h2>
+  <p class="text-gray-400 mb-6">
+    Adding text overlays is essential for social media videos like TikTok and Instagram Reels. 
+    With <strong>FastVideoCutter</strong>, you can add professional-looking text overlays in seconds without downloading any software.
+  </p>
+
+  <h3 class="text-xl font-bold text-white mt-8 mb-4">How to add text?</h3>
+  <ol class="list-decimal pl-5 text-gray-400 space-y-2">
+    <li>Upload your video and drag it to the timeline.</li>
+    <li>Click the <strong>"Text" tab</strong> in the sidebar and click <strong>"Add Default Text"</strong>.</li>
+    <li>Select the orange text clip on the timeline.</li>
+    <li>Use the <strong>Properties Panel</strong> on the right to type your text.</li>
+    <li>Customize color, background, stroke, and position.</li>
+    <li>Click <strong>Export</strong> to burn the text into the video permanently.</li>
+  </ol>
+
+</MarketingLayout>

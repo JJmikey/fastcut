@@ -1,0 +1,41 @@
+---
+const currentYear = new Date().getFullYear();
+---
+
+<footer class="bg-[#020617] border-t border-slate-800 py-12">
+  <div class="max-w-7xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm text-slate-500">
+      
+      <!-- 品牌 -->
+      <div class="col-span-2">
+          <h4 class="text-white font-bold mb-4">FastVideoCutter</h4>
+          <p>The secure, client-side video editor powered by WebCodecs.</p>
+      </div>
+
+      <!-- 工具連結 (這裡是重點，改一次全部生效) -->
+      <div>
+          <h4 class="text-white font-bold mb-4">Tools</h4>
+          <ul class="space-y-2">
+              <li><a href="/editor" class="hover:text-cyan-400 transition-colors">Video Cutter</a></li>
+              <li><a href="/merge-videos" class="hover:text-cyan-400 transition-colors">Merge Videos</a></li>
+              <li><a href="/trim-video" class="hover:text-cyan-400 transition-colors">Trim Video</a></li>
+              <li><a href="/add-audio-to-video" class="hover:text-cyan-400 transition-colors">Add Audio to Video</a></li>
+              <li><a href="/add-text-to-video" class="hover:text-cyan-400 transition-colors">Add Text to Video</a></li>
+              
+
+          </ul>
+      </div>
+
+      <!-- 法律與支援 -->
+      <div>
+           <h4 class="text-white font-bold mb-4">Legal & Help</h4>
+           <ul class="space-y-2">
+             <li><a href="#" class="hover:text-cyan-400 transition-colors">Privacy Policy</a></li>
+            
+           </ul>
+      </div>
+  </div>
+  
+  <div class="max-w-7xl mx-auto px-4 text-center text-slate-500 text-xs mt-12">
+      &copy; {currentYear} FastVideoCutter. All rights reserved.
+  </div>
+</footer>
