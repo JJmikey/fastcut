@@ -1,0 +1,97 @@
+---
+import MarketingLayout from '../layouts/MarketingLayout.astro';
+
+const features = [
+  {
+    title: "Social Media Ready",
+    desc: "Instantly resize videos for TikTok (9:16), Instagram (1:1), or YouTube (16:9) with one click.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-pink-500"><rect width="10" height="16" x="7" y="4" rx="2"/><path d="M11 17h2"/></svg>`
+  },
+  {
+    title: "Zoom & Pan",
+    desc: "Scale up your footage and reposition the frame to focus on the most important action.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-cyan-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>`
+  },
+  {
+    title: "No Quality Loss",
+    desc: "Crop and resize without blurry results. We process original high-quality footage directly in your browser.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`
+  }
+];
+---
+
+<MarketingLayout
+  title="Crop Video Online - Resize for TikTok & Instagram Free | FastVideoCutter"
+  heroBadge="Video Cropper"
+  heroTitle='Crop & Resize Videos <span class="text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-orange-400">Online</span>'
+  heroSubtitle="The easiest way to change video aspect ratio. Crop MP4 videos for TikTok, Instagram Reels, and YouTube Shorts without watermarks."
+  features={features}
+>
+
+  <!-- SEO 內容區 -->
+  <div class="space-y-12">
+    
+    <!-- Introduction -->
+    <div class="text-center max-w-3xl mx-auto">
+      <h2 class="text-3xl font-bold text-white mb-4">Repurpose Your Content Instantly</h2>
+      <p class="text-gray-400 leading-relaxed">
+        Don't let your landscape videos go to waste. With <strong>FastVideoCutter</strong>, you can easily crop and resize your footage 
+        to fit vertical screens like TikTok, YouTube Shorts, and Instagram Stories. No complex software installation required.
+      </p>
+    </div>
+
+    <!-- How-to Guide -->
+    <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-white">How to crop a video online?</h2>
+        <ol class="space-y-4">
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">1</span>
+                <p class="pt-1 text-slate-300">Click <strong>"Start Editing"</strong> and import your video clip.</p>
+            </li>
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">2</span>
+                <p class="pt-1 text-slate-300">Drag the video to the timeline and ensure it is <strong>Selected</strong> (highlighted).</p>
+            </li>
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">3</span>
+                <p class="pt-1 text-slate-300">
+                    In the <strong>Properties Panel</strong> on the right:
+                    <br>• Choose an <strong>Aspect Ratio</strong> (e.g., 9:16 for TikTok).
+                    <br>• Use the <strong>Scale</strong> slider to zoom in.
+                    <br>• Use <strong>Position X/Y</strong> sliders to center your subject.
+                </p>
+            </li>
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">4</span>
+                <p class="pt-1 text-slate-300">Check the preview and click <strong>Export</strong> to save your cropped video.</p>
+            </li>
+        </ol>
+    </section>
+
+    <!-- Comparison / Benefits -->
+    <div class="grid md:grid-cols-2 gap-8 mt-12">
+        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-slate-600 transition-colors">
+            <h3 class="text-xl font-bold text-white mb-3 flex items-center gap-2">
+                Why crop videos?
+            </h3>
+            <p class="text-slate-400 text-sm leading-relaxed">
+                Social media platforms favor vertical content (9:16). Cropping your landscape videos removes distractions 
+                and fills the phone screen, significantly increasing viewer engagement and watch time.
+            </p>
+        </div>
+        <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-slate-600 transition-colors">
+            <h3 class="text-xl font-bold text-white mb-3 flex items-center gap-2">
+                Supported Aspect Ratios
+            </h3>
+            <ul class="text-slate-400 text-sm space-y-2">
+                <li class="flex items-center gap-2"><span class="w-2 h-2 bg-cyan-500 rounded-full"></span><strong>16:9</strong> (YouTube Standard)</li>
+                <li class="flex items-center gap-2"><span class="w-2 h-2 bg-pink-500 rounded-full"></span><strong>9:16</strong> (TikTok / Shorts / Reels)</li>
+                <li class="flex items-center gap-2"><span class="w-2 h-2 bg-purple-500 rounded-full"></span><strong>1:1</strong> (Instagram Post)</li>
+                <li class="flex items-center gap-2"><span class="w-2 h-2 bg-blue-500 rounded-full"></span><strong>4:5</strong> (Portrait)</li>
+            </ul>
+        </div>
+    </div>
+
+  </div>
+
+</MarketingLayout>
