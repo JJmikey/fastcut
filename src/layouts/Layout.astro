@@ -14,6 +14,16 @@ import '../styles/global.css'; // 👈 必須加上這一行，Tailwind 才會�
 		<meta name="generator" content={Astro.generator} />
 		<title>Fast Video Cutter - Cut Video Online for Free, No Upload Needed</title>
   		<meta name="description" content="The fastest online video cutter. Edit 4K videos directly in your browser using WebCodecs. No upload required, 100% private, no watermark." />
+		<!-- Google tag (gtag.js) -->
+		<script async src="https://www.googletagmanager.com/gtag/js?id=G-K8ZP1BZOTZ"></script>
+		<script>
+		window.dataLayer = window.dataLayer || [];
+		function gtag(){ dataLayer.push(arguments); }
+		gtag('js', new Date());
+		gtag('config', 'G-K8ZP1BZOTZ');
+		</script>
+
+	
 	</head>
 	<!-- ✅ 新的 (允許捲動): 移除 h-screen 和 overflow-hidden，改為 min-h-screen -->
 	<body class="bg-[#1e1e1e] text-gray-300 font-sans min-h-screen selection:bg-cyan-500 selection:text-white">
