@@ -283,6 +283,17 @@
                 const keyFrame = i % (fps * 2) === 0; 
                 videoEncoder.encode(frame, { keyFrame });
                 frame.close();
+
+                // 在導出成功後
+                if (window.gtag) {
+                    window.gtag('event', 'video_export', {
+                        'event_category': 'engagement',
+                        'event_label': 'duration',
+                        'value': contentDuration
+                    });
+                }
+
+
             }
             
             // 清理 GIF Cache
