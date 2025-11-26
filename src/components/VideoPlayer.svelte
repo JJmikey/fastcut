@@ -1,8 +1,7 @@
 <script>
     import { currentVideoSource, currentTime, isPlaying } from '../stores/playerStore';
-    import { mainTrackClips, audioTrackClips, textTrackClips } from '../stores/timelineStore';
+    import { mainTrackClips, audioTrackClips, textTrackClips, draggedFile, projectSettings } from '../stores/timelineStore';
     import { isExporting, startExportTrigger } from '../stores/exportStore';
-    import { draggedFile } from '../stores/timelineStore'; 
     import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
     
     let videoRef;
@@ -27,7 +26,7 @@
     }
   
     // ------------------------------------------------
-    // 極速導出流程 (WebCodecs + Chunking + Text Fix)
+    // 極速導出流程 (WebCodecs + Chunking)
     // ------------------------------------------------
     async function fastExportProcess() {
         try {
@@ -39,8 +38,9 @@
             exportProgress = 0;
             exportStatus = "Initializing...";
 
-            const width = 1280;
-            const height = 720;
+            // 使用專案設定的寬高
+            const width = $projectSettings.width;
+            const height = $projectSettings.height;
             const fps = 30;
             const durationInSeconds = contentDuration; 
             const totalFrames = Math.ceil(durationInSeconds * fps);
@@ -121,14 +121,13 @@
                 exportProgress = Math.round((i / totalFrames) * 100);
                 await new Promise(r => setTimeout(r, 0));
 
-                // 找出 Clip
                 const activeClip = $mainTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
                 const activeText = $textTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
 
                 ctx.fillStyle = '#000'; 
                 ctx.fillRect(0, 0, width, height);
 
-                // 繪製影像
+                // 繪製影像 (支援 Transform)
                 if (activeClip) {
                     let sourceElement = null;
                     let sw, sh;
@@ -158,13 +157,25 @@
                     }
 
                     if (sourceElement && sw && sh) {
+                        // 1. Fit Ratio
                         const r = Math.min(width / sw, height / sh);
-                        const dw = sw * r; const dh = sh * r;
-                        ctx.drawImage(sourceElement, (width - dw)/2, (height - dh)/2, dw, dh);
+                        const dw = sw * r;
+                        const dh = sh * r;
+
+                        // 2. Transform
+                        const scale = activeClip.scale || 1.0;
+                        const posX = activeClip.positionX || 0;
+                        const posY = activeClip.positionY || 0;
+
+                        ctx.save();
+                        ctx.translate(width / 2 + posX, height / 2 + posY);
+                        ctx.scale(scale, scale);
+                        ctx.drawImage(sourceElement, -dw / 2, -dh / 2, dw, dh);
+                        ctx.restore();
                     }
                 }
 
-                // 繪製文字 (Render Layer - 修正順序)
+                // 繪製文字 (支援背景與描邊)
                 if (activeText) {
                     ctx.font = `${activeText.fontWeight || 'bold'} ${activeText.fontSize}px ${activeText.fontFamily || 'Arial, sans-serif'}`;
                     ctx.textAlign = 'center';
@@ -174,7 +185,7 @@
                     const y = (activeText.y / 100) * height;
                     const padding = 10;
 
-                    // A. 繪製背景
+                    // 背景
                     if (activeText.showBackground) {
                         const metrics = ctx.measureText(activeText.text);
                         const textWidth = metrics.width;
@@ -184,7 +195,7 @@
                         ctx.fillRect(x - textWidth/2 - padding, y - textHeight/2 - padding, textWidth + padding*2, textHeight + padding*2);
                     }
 
-                    // B. 先畫描邊 (Stroke First)
+                    // 描邊 (Stroke First)
                     if (activeText.strokeWidth > 0) {
                         ctx.lineJoin = 'round'; 
                         ctx.miterLimit = 2;
@@ -193,7 +204,7 @@
                         ctx.strokeText(activeText.text, x, y);
                     }
 
-                    // C. 最後畫文字本體 (Fill Second)
+                    // 本體 (Fill Second)
                     ctx.fillStyle = activeText.color;
                     ctx.fillText(activeText.text, x, y);
                 }
@@ -210,13 +221,10 @@
             const { buffer } = muxer.target;
             const blob = new Blob([buffer], { type: 'video/mp4' });
             const url = URL.createObjectURL(blob);
-            
             const a = document.createElement('a'); 
             a.href = url; 
             a.download = `fastvideocutter_export_${Date.now()}.mp4`;
-            
-            document.body.appendChild(a); 
-            a.click();
+            document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); isExporting.set(false); startExportTrigger.set(0); }, 1000);
 
         } catch (err) {
@@ -275,7 +283,7 @@
     $: activeAudioClip = $audioTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
     $: activeTextClip = $textTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
 
-    // 1. Sync Video / Image Source (解耦播放控制)
+    // 1. Sync Video / Image Source
     $: if (!$isExporting && !isSourceMode) {
         if (activeClip) {
             if (activeClip.type.startsWith('video')) {
@@ -283,8 +291,6 @@
                     if (!videoRef.src.includes(activeClip.fileUrl)) videoRef.src = activeClip.fileUrl;
                     videoRef.volume = activeClip.volume !== undefined ? activeClip.volume : 1.0;
                     const seekTime = ($currentTime - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
-                    
-                    // 只有在暫停時，或者誤差極大時才 Seek，避免與 Loop 衝突
                     if (!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) {
                         videoRef.currentTime = seekTime;
                     }
@@ -298,13 +304,12 @@
         }
     }
 
-    // 2. Sync Audio Source (解耦播放控制)
+    // 2. Sync Audio Source
     $: if (!$isExporting && !isSourceMode) {
         if (activeAudioClip && audioRef) {
             if (!audioRef.src.includes(activeAudioClip.fileUrl)) audioRef.src = activeAudioClip.fileUrl;
             audioRef.volume = activeAudioClip.volume !== undefined ? activeAudioClip.volume : 1.0;
             const audioSeekTime = ($currentTime - activeAudioClip.startOffset) + (activeAudioClip.mediaStartOffset || 0);
-            
             if (!$isPlaying || Math.abs(audioRef.currentTime - audioSeekTime) > 0.25) {
                 audioRef.currentTime = audioSeekTime;
             }
@@ -313,7 +318,7 @@
         }
     }
 
-    // 3. Source Preview Mode Logic
+    // 3. Source Preview Mode
     $: if (isSourceMode && !$isExporting) {
         const src = $currentVideoSource;
         if (src.type.startsWith('video')) {
@@ -332,22 +337,20 @@
         }
     }
 
-    // 4. 🔥 Play/Pause Control (獨立的控制邏輯)
+    // 4. Play/Pause Control
     $: if (!$isExporting) {
         if ($isPlaying && !isSourceMode) {
-            // Timeline 模式播放
             if (videoRef && activeClip && activeClip.type.startsWith('video')) videoRef.play().catch(() => {});
             if (audioRef && activeAudioClip) audioRef.play().catch(() => {});
         } else if (isSourceMode) {
-            // Source 模式由上面邏輯處理自動播放，這裡不強制干涉
+            // Source mode auto-plays
         } else {
-            // 暫停
             if (videoRef) videoRef.pause();
             if (audioRef) audioRef.pause();
         }
     }
 
-    // 5. 🔥 Loop Logic (只依賴 isPlaying，不依賴 activeClip)
+    // 5. Loop Logic
     $: if ($isPlaying && !$isExporting && !isSourceMode) {
         lastTime = performance.now();
         requestAnimationFrame(loop);
@@ -367,11 +370,9 @@
     function loop(timestamp) {
         if (!$isPlaying || $isExporting || isSourceMode) return;
         if (contentDuration === 0) { isPlaying.set(false); currentTime.set(0); return; }
-        
         const deltaTime = (timestamp - lastTime) / 1000;
         lastTime = timestamp;
         currentTime.update(t => t + deltaTime);
-        
         if ($currentTime >= contentDuration) {
             isPlaying.set(false);
             currentTime.set(contentDuration);
@@ -399,25 +400,32 @@
     <audio bind:this={audioRef} class="hidden"></audio>
 
     <div 
-        class="relative w-full h-full flex justify-center items-center group cursor-grab active:cursor-grabbing" 
+        class="relative flex justify-center items-center group cursor-grab active:cursor-grabbing bg-black shadow-2xl transition-all duration-300 overflow-hidden" 
+        style="
+            aspect-ratio: {$projectSettings.width} / {$projectSettings.height}; 
+            height: 80%; 
+            max-width: 90%;
+        "
         draggable="true"
         on:dragstart={handleDragStart}
         on:click={togglePlay}
     >
-        <!-- Video Element -->
+        <!-- Video Element (with Transform) -->
         <video 
             bind:this={videoRef} 
             class="max-w-full max-h-full object-contain pointer-events-none 
                    {(isSourceMode && $currentVideoSource.type.startsWith('video')) || (!isSourceMode && activeClip && activeClip.type.startsWith('video')) ? 'block' : 'hidden'}" 
+            style={!isSourceMode && activeClip ? `transform: translate(${activeClip.positionX || 0}px, ${activeClip.positionY || 0}px) scale(${activeClip.scale || 1}); transform-origin: center;` : ''}
             muted={false} 
             crossorigin="anonymous"
         ></video>
 
-        <!-- Image Element -->
+        <!-- Image Element (with Transform) -->
         <img 
             bind:this={imageRef}
             class="max-w-full max-h-full object-contain pointer-events-none 
                    {(isSourceMode && $currentVideoSource.type.startsWith('image')) || (!isSourceMode && activeClip && activeClip.type.startsWith('image')) ? 'block' : 'hidden'}"
+            style={!isSourceMode && activeClip ? `transform: translate(${activeClip.positionX || 0}px, ${activeClip.positionY || 0}px) scale(${activeClip.scale || 1}); transform-origin: center;` : ''}
             alt="preview"
         />
 
@@ -426,7 +434,7 @@
             <div class="flex flex-col items-center gap-4 text-green-400 animate-pulse"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="text-sm font-mono">Previewing Audio...</span></div>
         {/if}
         
-        <!-- 🔥 文字預覽層 (Preview Layer) -->
+        <!-- 🔥 Text Layer (With Styling) -->
         {#if !isSourceMode && activeTextClip}
             <div 
                 class="absolute pointer-events-none text-center select-none"
@@ -439,11 +447,8 @@
                     font-family: {activeTextClip.fontFamily || 'Arial, sans-serif'};
                     font-weight: {activeTextClip.fontWeight || 'bold'};
                     white-space: pre-wrap;
-                    
-                    /* 🔥 使用 paint-order 確保描邊在後面 */
                     paint-order: stroke fill;
                     -webkit-text-stroke: {activeTextClip.strokeWidth}px {activeTextClip.strokeColor};
-                    
                     background-color: {activeTextClip.showBackground ? activeTextClip.backgroundColor : 'transparent'};
                     padding: {activeTextClip.showBackground ? '10px 20px' : '0'};
                     border-radius: 8px;
@@ -453,14 +458,18 @@
             </div>
         {/if}
 
-        <!-- Overlays -->
+        <!-- 🔥 Overlays (Exit Preview Button ONLY in Source Mode) -->
         {#if isSourceMode}
-             <div class="absolute top-4 left-4 flex items-center gap-2 z-20">
-                <div class="bg-blue-900/90 px-3 py-1.5 rounded text-xs text-white pointer-events-none shadow-lg border border-blue-700/50">Source Preview: {$currentVideoSource.name}</div>
-                <button class="bg-black/60 hover:bg-red-600/80 text-white w-7 h-7 rounded flex items-center justify-center transition-colors backdrop-blur-sm shadow-lg cursor-pointer pointer-events-auto" on:click|stopPropagation={() => currentVideoSource.set(null)}><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+             <div class="absolute top-4 left-4 z-20">
+                <button 
+                    class="bg-black/60 hover:bg-red-600/90 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-all backdrop-blur-md shadow-lg cursor-pointer pointer-events-auto text-xs font-bold border border-white/10 hover:border-red-500/50"
+                    title="Close Preview & Back to Timeline"
+                    on:click|stopPropagation={() => currentVideoSource.set(null)}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <span>Exit Preview</span>
+                </button>
              </div>
-        {:else if activeClip && !$isExporting}
-            <div class="absolute top-4 left-4 bg-black/50 px-2 py-1 rounded text-xs text-white z-20 pointer-events-none">Timeline: {activeClip.name}</div>
         {/if}
 
         {#if !activeClip && !isSourceMode && !activeTextClip}

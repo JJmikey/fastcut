@@ -27,7 +27,11 @@ export const createClip = (fileData, startOffset, rawFile = null) => ({
     mediaStartOffset: 0,
     volume: 1.0,
     file: rawFile, // 原始檔案 (IndexedDB 用)
-    thumbnailUrls: fileData.thumbnailUrls // 縮圖 URL
+    thumbnailUrls: fileData.thumbnailUrls, // 縮圖 URL
+    // 🔥 新增：變形屬性 (Transform)
+    scale: 1.0,      // 縮放倍率
+    positionX: 0,    // X 軸位移 (像素)
+    positionY: 0     // Y 軸位移 (像素)
 });
 
 // Helper: 建立文字 Clip
@@ -149,3 +153,10 @@ export function splitClip(clipId, splitTime) {
 
     store.set(newClipsList);
 }
+
+// 🔥 新增：專案全域設定 (預設 16:9)
+export const projectSettings = writable({
+    width: 1280,
+    height: 720,
+    aspectRatio: '16:9'
+});

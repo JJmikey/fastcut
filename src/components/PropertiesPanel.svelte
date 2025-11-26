@@ -1,5 +1,5 @@
 <script>
-    import { selectedClipIds, mainTrackClips, audioTrackClips, textTrackClips } from '../stores/timelineStore';
+    import { selectedClipIds, mainTrackClips, audioTrackClips, textTrackClips, projectSettings } from '../stores/timelineStore';
     
     let selectedClip = null;
     let isMultiSelection = false;
@@ -42,7 +42,7 @@
         }
     }
 
-    // Helper: 更新屬性
+    // --- 通用屬性更新 ---
     function updateProperty(key, value) {
         const updateLogic = (clips) => clips.map(c => $selectedClipIds.includes(c.id) ? { ...c, [key]: value } : c);
         
@@ -56,22 +56,39 @@
         }
     }
 
+    // --- Text 更新 ---
     function updateText(e) { updateProperty('text', e.target.value); }
     function updateColor(e) { updateProperty('color', e.target.value); }
     function updateFontSize(e) { updateProperty('fontSize', parseInt(e.target.value)); }
     function updateFontFamily(e) { updateProperty('fontFamily', e.target.value); }
-    function updateX(e) { updateProperty('x', parseInt(e.target.value)); }
-    function updateY(e) { updateProperty('y', parseInt(e.target.value)); }
     
+    // 文字的位置 (百分比)
+    function updateTextX(e) { updateProperty('x', parseInt(e.target.value)); }
+    function updateTextY(e) { updateProperty('y', parseInt(e.target.value)); }
+    
+    // 文字樣式
     function updateShowBg(e) { updateProperty('showBackground', e.target.checked); }
     function updateBgColor(e) { updateProperty('backgroundColor', e.target.value); }
     function updateStrokeWidth(e) { updateProperty('strokeWidth', parseInt(e.target.value)); }
     function updateStrokeColor(e) { updateProperty('strokeColor', e.target.value); }
 
-    function updateVolume(e) {
-        updateProperty('volume', parseFloat(e.target.value));
+    // --- 🔥 Transform 更新 (Video/Image) ---
+    function updateScale(e) { updateProperty('scale', parseFloat(e.target.value)); }
+    function updatePosX(e) { updateProperty('positionX', parseInt(e.target.value)); }
+    function updatePosY(e) { updateProperty('positionY', parseInt(e.target.value)); }
+
+    // --- Audio/Video 更新 ---
+    function updateVolume(e) { updateProperty('volume', parseFloat(e.target.value)); }
+
+    // --- Global Project Settings ---
+    function setAspectRatio(ratio) {
+        if (ratio === '16:9') projectSettings.set({ width: 1280, height: 720, aspectRatio: '16:9' });
+        else if (ratio === '9:16') projectSettings.set({ width: 720, height: 1280, aspectRatio: '9:16' });
+        else if (ratio === '1:1') projectSettings.set({ width: 1080, height: 1080, aspectRatio: '1:1' });
+        else if (ratio === '4:5') projectSettings.set({ width: 1080, height: 1350, aspectRatio: '4:5' });
     }
 
+    // --- Delete ---
     function handleDelete() {
         if ($selectedClipIds.length === 0) return;
         if (confirm(`Delete ${$selectedClipIds.length} items?`)) {
@@ -101,10 +118,31 @@
     </div>
 
     <div class="p-4 flex-1 overflow-y-auto custom-scrollbar">
-        {#if selectedClip}
+        
+        <!-- 🔥 1. 全域設定 (沒選東西時顯示) -->
+        {#if !selectedClip}
+            <div class="space-y-4">
+                <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Canvas Settings</span>
+                
+                <div class="bg-[#202020] p-4 rounded border border-gray-700 space-y-3">
+                    <label class="text-xs text-gray-400">Aspect Ratio</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button on:click={() => setAspectRatio('16:9')} class="px-2 py-2 rounded text-xs border transition-colors {$projectSettings.aspectRatio === '16:9' ? 'bg-cyan-900/50 border-cyan-500 text-white' : 'border-gray-600 text-gray-400 hover:bg-gray-700'}">16:9 (YouTube)</button>
+                        <button on:click={() => setAspectRatio('9:16')} class="px-2 py-2 rounded text-xs border transition-colors {$projectSettings.aspectRatio === '9:16' ? 'bg-cyan-900/50 border-cyan-500 text-white' : 'border-gray-600 text-gray-400 hover:bg-gray-700'}">9:16 (TikTok)</button>
+                        <button on:click={() => setAspectRatio('1:1')} class="px-2 py-2 rounded text-xs border transition-colors {$projectSettings.aspectRatio === '1:1' ? 'bg-cyan-900/50 border-cyan-500 text-white' : 'border-gray-600 text-gray-400 hover:bg-gray-700'}">1:1 (Square)</button>
+                        <button on:click={() => setAspectRatio('4:5')} class="px-2 py-2 rounded text-xs border transition-colors {$projectSettings.aspectRatio === '4:5' ? 'bg-cyan-900/50 border-cyan-500 text-white' : 'border-gray-600 text-gray-400 hover:bg-gray-700'}">4:5 (Portrait)</button>
+                    </div>
+                    <div class="text-[10px] text-gray-500 text-center mt-2">
+                        Resolution: {$projectSettings.width} x {$projectSettings.height}
+                    </div>
+                </div>
+            </div>
+
+        {:else}
+            <!-- 有選取 Clip 時顯示 -->
             <div class="flex flex-col gap-6">
                 
-                <!-- 1. Info -->
+                <!-- Info -->
                 <div class="space-y-2">
                     <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Info</span>
                     <div class="bg-[#202020] p-3 rounded border border-gray-700">
@@ -122,28 +160,64 @@
                     </div>
                 </div>
 
-                <!-- 2. Text Editor -->
+                <!-- 🔥 2. Transform & Crop (Video/Image 專用) -->
+                {#if (selectedClip.type.startsWith('video') || selectedClip.type.startsWith('image')) && !isMultiSelection}
+                    <div class="space-y-4 border-t border-gray-700 pt-4">
+                        <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Transform / Crop</span>
+                        
+                        <!-- Scale -->
+                        <div class="space-y-1">
+                            <div class="flex justify-between">
+                                <label class="text-xs text-gray-400">Scale (Zoom)</label>
+                                <span class="text-xs text-cyan-400">{(selectedClip.scale || 1).toFixed(2)}x</span>
+                            </div>
+                            <input type="range" min="0.1" max="5" step="0.1" value={selectedClip.scale || 1} on:input={updateScale} class="w-full accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
+                        </div>
+
+                        <!-- Position -->
+                        <!-- Position -->
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400">Position (X / Y)</label>
+                            
+                            <!-- 數值輸入框 -->
+                            <div class="flex gap-2 mb-1">
+                                <!-- 🔥 修改：加入 min-w-0 防止撐開 -->
+                                <input 
+                                    type="number" 
+                                    value={selectedClip.positionX || 0} 
+                                    on:input={updatePosX} 
+                                    class="flex-1 min-w-0 bg-[#2a2a2a] border border-gray-600 rounded p-1 text-xs text-white text-center focus:border-cyan-500 outline-none"
+                                >
+                                <input 
+                                    type="number" 
+                                    value={selectedClip.positionY || 0} 
+                                    on:input={updatePosY} 
+                                    class="flex-1 min-w-0 bg-[#2a2a2a] border border-gray-600 rounded p-1 text-xs text-white text-center focus:border-cyan-500 outline-none"
+                                >
+                            </div>
+
+                            <!-- 滑桿控制 (保持原本的 Grid 佈局，但也加上 w-full 確保安全) -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <input type="range" min="-600" max="600" value={selectedClip.positionX || 0} on:input={updatePosX} class="w-full accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
+                                <input type="range" min="-600" max="600" value={selectedClip.positionY || 0} on:input={updatePosY} class="w-full accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
+                            </div>
+                        </div>
+                    </div>
+                {/if}
+
+                <!-- 3. Text Editor -->
                 {#if selectedClip.type === 'text' && !isMultiSelection}
                     <div class="space-y-4 border-t border-gray-700 pt-4">
                         <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Text Style</span>
                         
                         <div class="space-y-1">
                             <label class="text-xs text-gray-400">Content</label>
-                            <textarea 
-                                value={selectedClip.text} 
-                                on:input={updateText}
-                                class="w-full bg-[#2a2a2a] border border-gray-600 rounded p-2 text-sm text-white focus:border-cyan-500 outline-none"
-                                rows="2"
-                            ></textarea>
+                            <textarea value={selectedClip.text} on:input={updateText} class="w-full bg-[#2a2a2a] border border-gray-600 rounded p-2 text-sm text-white focus:border-cyan-500 outline-none" rows="2"></textarea>
                         </div>
 
                         <div class="space-y-1">
                             <label class="text-xs text-gray-400">Font</label>
-                            <select 
-                                value={selectedClip.fontFamily} 
-                                on:change={updateFontFamily}
-                                class="w-full bg-[#2a2a2a] border border-gray-600 rounded p-1 text-sm text-white focus:border-cyan-500 outline-none"
-                            >
+                            <select value={selectedClip.fontFamily} on:change={updateFontFamily} class="w-full bg-[#2a2a2a] border border-gray-600 rounded p-1 text-sm text-white focus:border-cyan-500 outline-none">
                                 {#each fonts as font}
                                     <option value={font.value}>{font.name}</option>
                                 {/each}
@@ -155,7 +229,6 @@
                                 <label class="text-xs text-gray-400">Color</label>
                                 <div class="flex items-center gap-2">
                                     <input type="color" value={selectedClip.color} on:input={updateColor} class="w-8 h-8 bg-transparent border-0 p-0 cursor-pointer">
-                                    <span class="text-xs text-gray-500">{selectedClip.color}</span>
                                 </div>
                             </div>
                             <div class="flex-1 space-y-1">
@@ -167,8 +240,8 @@
                         <div class="space-y-1">
                             <label class="text-xs text-gray-400">Position (X / Y %)</label>
                             <div class="flex gap-2">
-                                <input type="range" min="0" max="100" value={selectedClip.x} on:input={updateX} class="flex-1 accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
-                                <input type="range" min="0" max="100" value={selectedClip.y} on:input={updateY} class="flex-1 accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
+                                <input type="range" min="0" max="100" value={selectedClip.x} on:input={updateTextX} class="flex-1 accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
+                                <input type="range" min="0" max="100" value={selectedClip.y} on:input={updateTextY} class="flex-1 accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer">
                             </div>
                         </div>
 
@@ -196,11 +269,7 @@
                     </div>
                 {/if}
 
-                <!-- 
-                    3. 音量控制
-                    🔥 修改：只有 Video, Audio, 或 多選模式 顯示
-                    🔥 也就是說：type != 'text' 且 type != 'image'
-                -->
+                <!-- 4. Volume (Video/Audio Only) -->
                 {#if selectedClip.type !== 'text' && !selectedClip.type.startsWith('image')}
                     <div class="space-y-2 border-t border-gray-700 pt-4">
                         <div class="flex justify-between items-center">
@@ -208,8 +277,7 @@
                             <span class="text-xs text-cyan-400">{Math.round((selectedClip.volume || 1) * 100)}%</span>
                         </div>
                         <input 
-                            type="range" 
-                            min="0" max="1" step="0.01" 
+                            type="range" min="0" max="1" step="0.01" 
                             value={selectedClip.volume ?? 1} 
                             on:input={updateVolume}
                             class="w-full accent-cyan-500 h-1 bg-gray-600 rounded appearance-none cursor-pointer"
@@ -217,7 +285,7 @@
                     </div>
                 {/if}
 
-                <!-- 4. Delete -->
+                <!-- 5. Delete -->
                 <div class="pt-4 border-t border-gray-700">
                     <button 
                         on:click={handleDelete}
@@ -227,13 +295,6 @@
                     </button>
                 </div>
 
-            </div>
-        {:else}
-            <div class="h-full flex flex-col justify-center items-center text-center opacity-40">
-                <div class="w-16 h-16 bg-[#252525] rounded-full flex items-center justify-center mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" x2="20" y1="21" y2="21"/><line x1="4" x2="20" y1="14" y2="14"/><line x1="10" x2="14" y1="21" y2="14"/><line x1="16" x2="16" y1="8" y2="3"/><line x1="8" x2="8" y1="8" y2="3"/><line x1="12" x2="12" y1="5" y2="3"/><line x1="12" x2="12" y1="11" y2="8"/></svg>
-                </div>
-                <p class="text-sm text-gray-500">Select clips to edit properties</p>
             </div>
         {/if}
     </div>
