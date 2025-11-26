@@ -37,11 +37,7 @@ const bars = Array.from({ length: 100 }).map(() => Math.floor(Math.random() * 60
             id="demo-video-img"
         />
         
-        <!-- AI Detect Tag -->
-        <div class="absolute top-4 right-4 bg-black/60 backdrop-blur text-white text-[10px] px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
-            <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-            AI SCENE DETECT
-        </div>
+       
 
         <!-- Big Play Button -->
         <div class="absolute inset-0 flex items-center justify-center transition-opacity duration-300" id="center-play-btn">
@@ -50,17 +46,7 @@ const bars = Array.from({ length: 100 }).map(() => Math.floor(Math.random() * 60
             </div>
         </div>
 
-        <!-- Bottom Controls -->
-        <div class="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-black/80 to-transparent flex items-center px-4 justify-between">
-             <div class="flex items-center gap-4">
-                <svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                <span class="text-xs text-gray-300 font-mono">00:02:29.50 / 00:15:00</span>
-             </div>
-             <div class="flex items-center gap-2 text-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-                <div class="w-16 h-1 bg-gray-600 rounded"><div class="w-2/3 h-full bg-white rounded"></div></div>
-             </div>
-        </div>
+        
     </div>
 
     <!-- 3. 底部控制與時間軸 (Timeline) -->
