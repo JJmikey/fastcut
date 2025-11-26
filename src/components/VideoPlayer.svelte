@@ -132,7 +132,15 @@
             // 5. GIF Pre-processing
             exportStatus = "Decoding GIFs...";
             const gifCache = {}; 
-            const imageClips = $mainTrackClips.filter(c => c.type === 'image/gif');
+            
+            // 🔥 修改：放寬判斷標準 (檢查 type 或者 副檔名)
+            const imageClips = $mainTrackClips.filter(c => 
+                c.type === 'image/gif' || 
+                c.name.toLowerCase().endsWith('.gif')
+            );
+
+            console.log("🔍 [Export] 偵測到的 GIF 片段數量:", imageClips.length);
+
             for (const clip of imageClips) {
                 try {
                     const decoded = await decodeGifFrames(clip.fileUrl);
@@ -167,18 +175,24 @@
                     let sourceElement = null;
                     let sw, sh;
 
-                    // GIF 處理
-                    if (activeClip.type === 'image/gif' && gifCache[activeClip.id]) {
+                    // 判斷是否為 GIF (檢查 Cache 是否存在最準)
+                    const isGif = gifCache[activeClip.id] !== undefined;
+
+                    // 🔥 GIF 處理
+                    if (isGif) {
                         const gifData = gifCache[activeClip.id];
                         const clipInternalTime = (timeInSeconds - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
                         const loopTime = clipInternalTime % gifData.totalDuration;
+                        
                         const frameObj = gifData.frames.find(f => loopTime >= f.startTime && loopTime < (f.startTime + f.duration));
+                        
                         if (frameObj) {
                             sourceElement = frameObj.image;
                             sw = sourceElement.displayWidth;
                             sh = sourceElement.displayHeight;
                         }
                     }
+
                     // Video 處理
                     else if (activeClip.type.startsWith('video')) {
                         sourceElement = videoRef;

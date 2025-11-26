@@ -1,39 +1,51 @@
-// src/utils/gifHelper.js
-
 export async function decodeGifFrames(url) {
-    // 1. 下載 GIF 檔案資料
+    // 1. 檢查 API
+    if (!('ImageDecoder' in window)) {
+        console.error("❌ 瀏覽器不支援 ImageDecoder API");
+        throw new Error("Browser does not support ImageDecoder");
+    }
+
     const response = await fetch(url);
-    const buffer = await response.arrayBuffer(); // 轉成 ArrayBuffer
+    const buffer = await response.arrayBuffer();
     
-    // 2. 建立 ImageDecoder (WebCodecs API)
-    // type: 'image/gif' 告訴瀏覽器這是 GIF
     const decoder = new ImageDecoder({ 
         data: new DataView(buffer), 
         type: 'image/gif' 
     });
 
+    // 🔥🔥🔥 關鍵修正：等待軌道準備就緒 🔥🔥🔥
+    await decoder.tracks.ready;
+
+    // 防呆檢查
+    if (!decoder.tracks.selectedTrack) {
+        throw new Error("GIF 解碼失敗：找不到影像軌道 (selectedTrack is null)");
+    }
+
     const frames = [];
     let accumulatedDuration = 0;
 
-    // 3. 解碼每一幀
-    // decoder.tracks.selectedTrack.frameCount 是總幀數
+    // 現在可以安全讀取 frameCount 了
     const frameCount = decoder.tracks.selectedTrack.frameCount;
+    console.log(`🎞️ [GIF Helper] GIF 解析成功，總幀數: ${frameCount}`);
 
     for (let i = 0; i < frameCount; i++) {
+        // decode 也是非同步的
         const result = await decoder.decode({ frameIndex: i });
         
-        // result.image 是一個 VideoFrame 物件
-        // duration 是微秒 (microseconds)，我們轉成秒
-        const duration = result.image.duration ? result.image.duration / 1_000_000 : 0.1; // 預設 0.1s 防呆
+        // duration 單位是微秒 (us)，轉成秒 (s)
+        // 如果 GIF 沒有定義 duration (極少見)，給個預設值 0.1s
+        const duration = result.image.duration ? result.image.duration / 1_000_000 : 0.1; 
         
         frames.push({
-            image: result.image, // 這是可以直接畫在 Canvas 上的 Bitmap
+            image: result.image, // VideoFrame
             duration: duration,
             startTime: accumulatedDuration
         });
 
         accumulatedDuration += duration;
     }
+
+    console.log(`✅ [GIF Helper] 解碼完成。總時長: ${accumulatedDuration.toFixed(2)}s`);
 
     return {
         frames,
