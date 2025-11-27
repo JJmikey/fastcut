@@ -14,7 +14,7 @@
   
     // Helper: 取得檔案真實長度 (WebM 強力修正版)
     function getMediaDuration(file, url) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
         // 圖片直接回傳
         if (file.type.startsWith('image')) {
             resolve(3); 
@@ -83,9 +83,9 @@
             };
         };
 
-        element.onerror = () => { 
-            clearTimeout(timeout); 
-            resolve(5); 
+        element.onerror = (event) => {
+            clearTimeout(timeout);
+            reject(new Error(`Failed to load metadata for ${file.name} (${file.type || 'unknown type'})`, { cause: event }));
         };
         });
     }
@@ -95,34 +95,40 @@
       const newRawFiles = Array.from(e.target.files);
       
       const processedPromises = newRawFiles.map(async (file) => {
-        if (file.size > 2 * 1024 * 1024 * 1024) {
-            alert(`檔案 "${file.name}" 太大！請使用 2GB 以下檔案。`);
+        try {
+            if (file.size > 2 * 1024 * 1024 * 1024) {
+                alert(`檔案 "${file.name}" 太大！請使用 2GB 以下檔案。`);
+                return null;
+            }
+
+            const url = URL.createObjectURL(file);
+            // 🔥 這裡會呼叫新的 getMediaDuration
+            const duration = await getMediaDuration(file, url);
+
+            // 2. 🔥 關鍵修改：把正確的 duration 傳進去！
+            const thumbnailBlobs = await generateThumbnails(file, duration);
+            const thumbnailUrls = thumbnailBlobs.map(b => URL.createObjectURL(b));
+
+            let waveform = null;
+            if (file.type.startsWith('audio') || file.type.startsWith('video')) {
+                waveform = await generateWaveform(file);
+            }
+
+            return {
+              name: file.name,
+              type: file.type,
+              url: url,
+              duration: duration,
+              file: file,
+              thumbnails: thumbnailBlobs,
+              waveform: waveform,
+              thumbnailUrls: thumbnailUrls
+            };
+        } catch (err) {
+            console.error(`Failed to process file ${file.name}:`, err);
+            alert(`Unable to load ${file.name}. This format may not be supported by your browser.`);
             return null;
         }
-  
-        const url = URL.createObjectURL(file);
-        // 🔥 這裡會呼叫新的 getMediaDuration
-        const duration = await getMediaDuration(file, url);
-        
-        // 2. 🔥 關鍵修改：把正確的 duration 傳進去！
-        const thumbnailBlobs = await generateThumbnails(file, duration);
-        const thumbnailUrls = thumbnailBlobs.map(b => URL.createObjectURL(b));
-  
-        let waveform = null;
-        if (file.type.startsWith('audio') || file.type.startsWith('video')) {
-            waveform = await generateWaveform(file);
-        }
-        
-        return {
-          name: file.name,
-          type: file.type,
-          url: url,
-          duration: duration,
-          file: file, 
-          thumbnails: thumbnailBlobs, 
-          waveform: waveform, 
-          thumbnailUrls: thumbnailUrls 
-        };
       });
   
       const results = await Promise.all(processedPromises);
