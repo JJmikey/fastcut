@@ -375,8 +375,11 @@
                     if (!videoRef.src.includes(activeClip.fileUrl)) videoRef.src = activeClip.fileUrl;
                     videoRef.volume = activeClip.volume !== undefined ? activeClip.volume : 1.0;
                     const seekTime = ($currentTime - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
-                    
-                    if (!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) {
+
+                    // 🔥🔥🔥 關鍵修正：加入 !videoRef.seeking 檢查 🔥🔥🔥
+                    // 只有當影片「沒有在搜尋中」時，才更新時間。
+                    // 這能防止你在快速拖曳時，指令堆積導致瀏覽器崩潰。
+                    if ((!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) && !videoRef.seeking) {
                         videoRef.currentTime = seekTime;
                     }
                 }

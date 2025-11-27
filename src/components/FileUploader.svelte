@@ -1,62 +1,113 @@
 <script>
     import { currentVideoSource } from '../stores/playerStore';
-    // 引入 Stores
     import { draggedFile, uploadedFiles, textTrackClips, createTextClip, resolveOverlaps } from '../stores/timelineStore';
-    
-    // 引入工具函式
     import { generateThumbnails } from '../utils/thumbnailGenerator';
-    import { generateWaveform } from '../utils/waveformGenerator'; // 🔥 記得引入這個
+    import { generateWaveform } from '../utils/waveformGenerator'; 
     import { get } from 'svelte/store';
     
     let fileInput;
     
-    // UI 狀態
-    let activeFilter = 'all'; // 'all', 'video', 'audio', 'image'
-    let activeTab = 'media';  // 'media' or 'text'
+    let activeFilter = 'all'; 
+    let activeTab = 'media';  
   
     function handleClick() { fileInput.click(); }
   
-    // Helper: 取得檔案真實長度
+    // Helper: 取得檔案真實長度 (WebM 強力修正版)
     function getMediaDuration(file, url) {
-      return new Promise((resolve) => {
+        return new Promise((resolve) => {
+        // 圖片直接回傳
         if (file.type.startsWith('image')) {
-          resolve(3); 
-        } else if (file.type.startsWith('video')) {
-          const video = document.createElement('video');
-          video.preload = 'metadata';
-          video.onloadedmetadata = () => resolve(video.duration);
-          video.onerror = () => resolve(5);
-          video.src = url;
-        } else if (file.type.startsWith('audio')) {
-          const audio = new Audio();
-          audio.onloadedmetadata = () => resolve(audio.duration);
-          audio.onerror = () => resolve(5);
-          audio.src = url;
-        } else {
-          resolve(5);
-        }
-      });
+            resolve(3); 
+            return;
+        } 
+
+        const element = file.type.startsWith('video') ? document.createElement('video') : document.createElement('audio');
+        element.preload = 'auto'; // 強制瀏覽器盡量讀取資料
+        element.muted = true;
+        element.src = url;
+
+        // 🔥 修改 1: 增加超時時間到 10秒 (WebM 解析很慢)
+        // 如果 10秒還讀不出來，才放棄
+        const timeout = setTimeout(() => {
+            console.warn("⚠️ [Debug] 讀取嚴重超時 (10s)，回傳預設值 30s");
+            resolve(30);
+        }, 10000);
+
+        element.onloadedmetadata = () => {
+            const rawDuration = element.duration;
+            console.log(`📄 [Debug] 原始 Duration: ${rawDuration}`);
+
+            const isWebM = file.type === 'video/webm' || file.name.toLowerCase().endsWith('.webm');
+
+            // 如果不是 WebM 且長度正常，直接信賴
+            if (!isWebM && rawDuration !== Infinity && !isNaN(rawDuration)) {
+                clearTimeout(timeout);
+                resolve(rawDuration);
+                return;
+            }
+
+            console.log("⚠️ [Debug] 啟動 WebM 強制校正...");
+            
+            // 跳轉到超大時間
+            element.currentTime = 1e7; 
+            
+            element.onseeked = () => {
+                clearTimeout(timeout);
+                
+                // 取得 seek 後的時間
+                let realDuration = element.currentTime;
+                console.log(`📍 [Debug] Seek 結果: ${realDuration}`);
+
+                // 🔥 修改 2: 緩衝區判定法 (The Buffered Hack)
+                // 如果 seek 後的時間跟原始 duration 一樣 (588)，代表瀏覽器被騙了
+                // 這時候我們檢查 "buffered" (實際讀取到的資料範圍)
+                if (Math.abs(realDuration - rawDuration) < 1 || realDuration > 36000) {
+                    if (element.buffered.length > 0) {
+                        // 取最後一段緩衝區的結束時間，這通常是真正的影片結尾
+                        const bufferedEnd = element.buffered.end(element.buffered.length - 1);
+                        console.log(`ℹ️ [Debug] 採用 Buffered End: ${bufferedEnd}`);
+                        // 如果 bufferedEnd 合理 (例如 > 0)，就用它
+                        if (bufferedEnd > 0) {
+                            realDuration = bufferedEnd;
+                        }
+                    }
+                }
+
+                // 最後防呆：如果還是 0，就用原始 duration (如果原始不是 Infinity)
+                if (realDuration === 0 && rawDuration > 0 && rawDuration !== Infinity) {
+                    resolve(rawDuration);
+                } else {
+                    // 如果算出來是 100 多秒，這裡就會正確回傳
+                    resolve(realDuration);
+                }
+            };
+        };
+
+        element.onerror = () => { 
+            clearTimeout(timeout); 
+            resolve(5); 
+        };
+        });
     }
-  
-    // 處理檔案上傳
+    
+    // ... (其餘代碼完全保持不變) ...
     async function handleFileChange(e) {
       const newRawFiles = Array.from(e.target.files);
       
       const processedPromises = newRawFiles.map(async (file) => {
-        // 檔案大小限制 2GB
         if (file.size > 2 * 1024 * 1024 * 1024) {
             alert(`檔案 "${file.name}" 太大！請使用 2GB 以下檔案。`);
             return null;
         }
   
         const url = URL.createObjectURL(file);
+        // 🔥 這裡會呼叫新的 getMediaDuration
         const duration = await getMediaDuration(file, url);
         
-        // 1. 生成縮圖 (Video/Image)
-        const thumbnailBlobs = await generateThumbnails(file);
+        // 2. 🔥 關鍵修改：把正確的 duration 傳進去！
+        const thumbnailBlobs = await generateThumbnails(file, duration);
         const thumbnailUrls = thumbnailBlobs.map(b => URL.createObjectURL(b));
   
-        // 2. 🔥 生成波形數據 (Audio/Video)
         let waveform = null;
         if (file.type.startsWith('audio') || file.type.startsWith('video')) {
             waveform = await generateWaveform(file);
@@ -67,13 +118,9 @@
           type: file.type,
           url: url,
           duration: duration,
-          
-          // 原始資料 (用於存檔)
           file: file, 
           thumbnails: thumbnailBlobs, 
-          waveform: waveform, // 🔥 儲存波形
-  
-          // 顯示用資料
+          waveform: waveform, 
           thumbnailUrls: thumbnailUrls 
         };
       });
@@ -81,44 +128,38 @@
       const results = await Promise.all(processedPromises);
       const validFiles = results.filter(result => result !== null);
       
-      // 更新全域 Store
       uploadedFiles.update(currentFiles => [...currentFiles, ...validFiles]);
       
       e.target.value = '';
       activeFilter = 'all'; 
     }
   
-    // 點擊預覽素材
     function selectMedia(file) {
       if (file.type.startsWith('video') || file.type.startsWith('image') || file.type.startsWith('audio')) {
         currentVideoSource.set(file);
       }
     }
   
-    // 拖曳開始
     function handleDragStart(e, file) {
-      // 1. 設定 Store (傳遞所有原始資料給 Timeline 用於存檔)
       draggedFile.set({ 
           file: file.file,
           thumbnails: file.thumbnails,
-          waveform: file.waveform // 🔥 傳遞波形 Blob/Array
+          waveform: file.waveform 
       });
   
-      // 2. 設定 JSON (傳遞給 Timeline 用於立即顯示)
       const dragData = JSON.stringify({
           url: file.url,
           name: file.name,
           type: file.type,
           duration: file.duration,
           thumbnailUrls: file.thumbnailUrls || [],
-          waveform: file.waveform // 🔥 傳遞波形數據
+          waveform: file.waveform 
       });
       
       e.dataTransfer.setData('application/json', dragData);
       e.dataTransfer.effectAllowed = 'copy';
     }
   
-    // 刪除素材
     function handleDelete(e, fileToDelete) {
         e.stopPropagation(); 
         if (!confirm(`Are you sure to delete "${fileToDelete.name}" ?`)) return;
@@ -131,20 +172,16 @@
         });
     }
   
-    // 新增文字到 Timeline
     function addTextToTimeline() {
         const clips = get(textTrackClips);
         const currentMaxTime = clips.length > 0 ? Math.max(...clips.map(c => c.startOffset + c.duration)) : 0;
-        
         const newClip = createTextClip(currentMaxTime);
-        
         textTrackClips.update(currentClips => {
             const newClips = [...currentClips, newClip];
             return resolveOverlaps(newClips, newClip.id);
         });
     }
   
-    // Reactive: 防呆過濾列表
     $: safeFiles = $uploadedFiles || [];
   
     $: filteredFiles = safeFiles.filter(f => {
@@ -160,7 +197,6 @@
   
   <div class="flex flex-col h-full">
       
-      <!-- 頂部模式切換 Tabs -->
       <div class="flex border-b border-gray-700 mb-4 shrink-0">
           <button 
               class="flex-1 py-3 text-sm font-medium {activeTab === 'media' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-[#252525]' : 'text-gray-400 hover:text-gray-200'}"
@@ -177,9 +213,6 @@
       </div>
   
       {#if activeTab === 'media'}
-          <!-- Media 模式內容 -->
-          
-          <!-- Import Button -->
           <div class="shrink-0 mb-4">
               <button on:click={handleClick} class="w-full border-2 border-dashed border-gray-600 rounded-lg h-24 flex flex-col justify-center items-center gap-2 cursor-pointer hover:border-gray-500 hover:bg-[#2a2a2a] transition-colors group">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 group-hover:text-gray-200"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
@@ -188,7 +221,6 @@
               <input bind:this={fileInput} type="file" class="hidden" multiple accept="image/*,video/*,audio/*" on:change={handleFileChange} />
           </div>
   
-          <!-- Filter Tabs -->
           <div class="flex items-center gap-2 mb-2 shrink-0 overflow-x-auto no-scrollbar pb-1">
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'all' ? 'bg-gray-200 text-black border-gray-200' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'all'}>All ({safeFiles.length})</button>
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'video' ? 'bg-cyan-900 text-cyan-400 border-cyan-500' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'video'}>Video ({countVideo})</button>
@@ -196,7 +228,6 @@
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'image' ? 'bg-purple-900 text-purple-400 border-purple-500' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'image'}>Image ({countImage})</button>
           </div>
   
-          <!-- File List -->
           {#if filteredFiles.length > 0}
               <div class="grid grid-cols-2 gap-2 overflow-y-auto flex-1 pr-1 custom-scrollbar content-start">
                   {#each filteredFiles as file}
@@ -209,7 +240,6 @@
                       role="button" 
                       tabindex="0"
                   >
-                      <!-- 刪除按鈕 -->
                       <button 
                           on:click={(e) => handleDelete(e, file)}
                           class="absolute top-1 left-1 w-5 h-5 bg-black/60 hover:bg-red-600 rounded flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all z-20"
@@ -249,7 +279,6 @@
           {/if}
   
       {:else if activeTab === 'text'}
-          <!-- Text 模式內容 -->
           <div class="flex flex-col gap-4 p-2">
               <button 
                   on:click={addTextToTimeline}
@@ -258,7 +287,6 @@
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                   Add Default Text
               </button>
-              
               <div class="text-xs text-gray-500 text-center mt-4">
                   Click button to add a text layer to timeline.<br>
                   Then edit properties in the right panel.
