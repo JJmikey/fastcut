@@ -1,6 +1,5 @@
 <script>
     import { currentVideoSource, currentTime, isPlaying } from '../stores/playerStore';
-    // 確保只引入一次 timelineStore
     import { mainTrackClips, audioTrackClips, textTrackClips, draggedFile, projectSettings, uploadedFiles, generateId, resolveOverlaps, createTextClip } from '../stores/timelineStore';
     import { isExporting, startExportTrigger } from '../stores/exportStore';
     import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
@@ -70,13 +69,87 @@
         currentVideoSource.set(null);
         currentTime.set(insertTime);
     }
+
+    // --- Load Sample Project ---
+    async function loadSampleProject() {
+        try {
+            isProcessingDrag = true; 
+            const [vidRes, audRes] = await Promise.all([fetch('/sample_video.mp4'), fetch('/sample_audio.mp3')]);
+            if (!vidRes.ok || !audRes.ok) throw new Error(`Sample files missing.`);
+            
+            const vidBlob = await vidRes.blob();
+            const audBlob = await audRes.blob();
+            const vidFile = new File([vidBlob], "Demo_Video.mp4", { type: "video/mp4" });
+            const audFile = new File([audBlob], "Demo_Music.mp3", { type: "audio/mpeg" });
+
+            const vidUrl = URL.createObjectURL(vidFile);
+            const vidDuration = await getMediaDuration(vidFile, vidUrl) || 10;
+            const thumbs = await generateThumbnails(vidFile, vidDuration);
+            const thumbUrls = thumbs.map(b => URL.createObjectURL(b));
+
+            const audUrl = URL.createObjectURL(audFile);
+            const audDuration = await getMediaDuration(audFile, audUrl) || 10;
+            const waveform = await generateWaveform(audFile);
+
+            const sampleFiles = [
+                { name: vidFile.name, type: vidFile.type, url: vidUrl, duration: vidDuration, file: vidFile, thumbnails: thumbs, thumbnailUrls: thumbUrls },
+                { name: audFile.name, type: audFile.type, url: audUrl, duration: audDuration, file: audFile, waveform: waveform }
+            ];
+            uploadedFiles.update(curr => [...curr, ...sampleFiles]);
+
+            const videoClip = {
+                id: generateId(), fileUrl: vidUrl, name: vidFile.name, type: vidFile.type,
+                startOffset: 0, duration: vidDuration, sourceDuration: vidDuration, mediaStartOffset: 0, volume: 1.0,
+                file: vidFile, thumbnails: thumbs, thumbnailUrls: thumbUrls
+            };
+            mainTrackClips.update(clips => [videoClip]);
+
+            const audioClip = {
+                id: generateId(), fileUrl: audUrl, name: audFile.name, type: audFile.type,
+                startOffset: 0, duration: audDuration, sourceDuration: audDuration, mediaStartOffset: 0, volume: 0.5,
+                file: audFile, waveform: waveform
+            };
+            audioTrackClips.update(clips => [audioClip]);
+
+            const textClip = createTextClip(0);
+            textClip.text = "✨FastVideoCutter";
+            textClip.duration = 5;
+            textClip.fontSize = 28;
+            textClip.x = 90;
+            textClip.y = 80;
+            textClip.color = '#ffffff';
+            textClip.showBackground = true;
+            textClip.backgroundColor = '#00000080';
+            textTrackClips.update(clips => [textClip]);
+
+             // 🔥🔥🔥 新增：發送 Sample 通知 🔥🔥🔥
+             fetch('/api/discord', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'sample',
+                    filename: 'Demo Project',
+                    duration: '10'
+                })
+            }).catch(e => console.warn("Webhook failed", e));
+
+
+
+
+        } catch (e) {
+            console.error("Load sample failed:", e);
+            alert("Failed to load sample project.");
+        } finally {
+            isProcessingDrag = false;
+        }
+    }
   
     // --- 🔥 唯一的 Drop Handler (Handle both Internal & External) ---
     async function handlePreviewDrop(e) {
         e.preventDefault();
         if ($isExporting) return;
 
-        // A. 內部拖曳 (Sidebar -> Preview)
+        // Internal
         const jsonString = e.dataTransfer.getData('application/json');
         if (jsonString) {
             try {
@@ -92,7 +165,7 @@
             } catch (err) { console.error("Internal drop failed", err); }
         }
 
-        // B. 外部拖曳 (Desktop -> Preview)
+        // External
         const files = Array.from(e.dataTransfer.files);
         if (files.length === 0) return;
 
@@ -100,10 +173,7 @@
 
         try {
             const processedPromises = files.map(async (file) => {
-                if (file.size > 2 * 1024 * 1024 * 1024) {
-                    alert(`File too large: ${file.name}`);
-                    return null;
-                }
+                if (file.size > 2 * 1024 * 1024 * 1024) { alert(`File too large: ${file.name}`); return null; }
                 const url = URL.createObjectURL(file);
                 const duration = await getMediaDuration(file, url);
                 if (duration === null) return null;
@@ -176,11 +246,7 @@
             const muxer = new Muxer({
                 target: new ArrayBufferTarget(),
                 video: { codec: 'avc', width, height },
-                audio: aSupport.supported ? { 
-                    codec: audioConfig.codec === 'opus' ? 'opus' : 'aac',
-                    numberOfChannels: 2, 
-                    sampleRate: audioConfig.sampleRate 
-                } : undefined,
+                audio: aSupport.supported ? { codec: audioConfig.codec === 'opus' ? 'opus' : 'aac', numberOfChannels: 2, sampleRate: audioConfig.sampleRate } : undefined,
                 fastStart: false 
             });
 
@@ -192,15 +258,11 @@
             const videoConfig = { codec: 'avc1.4d002a', width, height, bitrate: 8_000_000, framerate: fps };
             const vSupport = await VideoEncoder.isConfigSupported(videoConfig);
             if (!vSupport.supported) videoConfig.codec = 'avc1.42002a'; 
-            
             await videoEncoder.configure(videoConfig);
 
             if (aSupport.supported) {
                 exportStatus = "Processing Audio...";
-                const audioEncoder = new AudioEncoder({
-                    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
-                    error: (e) => console.error("Audio Error:", e)
-                });
+                const audioEncoder = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => console.error(e) });
                 audioEncoder.configure(audioConfig);
 
                 const allClips = [...$mainTrackClips, ...$audioTrackClips];
@@ -211,20 +273,11 @@
 
                 const chunkSize = audioConfig.sampleRate; 
                 const totalSamples = mixedBuffer.length;
-
                 for (let i = 0; i < totalSamples; i += chunkSize) {
                     const len = Math.min(chunkSize, totalSamples - i);
                     const chunkData = interleaved.slice(i * 2, (i + len) * 2);
-                    const audioData = new AudioData({
-                        format: 'f32',
-                        sampleRate: audioConfig.sampleRate,
-                        numberOfFrames: len,
-                        numberOfChannels: 2,
-                        timestamp: (i / audioConfig.sampleRate) * 1_000_000, 
-                        data: chunkData
-                    });
-                    audioEncoder.encode(audioData);
-                    audioData.close();
+                    const audioData = new AudioData({ format: 'f32', sampleRate: audioConfig.sampleRate, numberOfFrames: len, numberOfChannels: 2, timestamp: (i / audioConfig.sampleRate) * 1_000_000, data: chunkData });
+                    audioEncoder.encode(audioData); audioData.close();
                 }
                 await audioEncoder.flush();
             }
@@ -236,9 +289,7 @@
                 try {
                     const decoded = await decodeGifFrames(clip.fileUrl);
                     gifCache[clip.id] = decoded;
-                } catch (e) {
-                    console.error("GIF Decode Failed:", clip.name, e);
-                }
+                } catch (e) { console.error("GIF Decode Failed:", clip.name, e); }
             }
 
             exportStatus = "Rendering Video...";
@@ -248,7 +299,6 @@
 
             for (let i = 0; i < totalFrames; i++) {
                 if (videoEncoder.state === 'closed') throw new Error("Video Encoder crashed.");
-
                 const timeInSeconds = i / fps;
                 const timestampMicros = i * (1_000_000 / fps);
                 exportProgress = Math.round((i / totalFrames) * 100);
@@ -257,30 +307,21 @@
                 const activeClip = $mainTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
                 const activeText = $textTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
 
-                ctx.fillStyle = '#000'; 
-                ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
 
                 if (activeClip) {
-                    let sourceElement = null;
-                    let sw, sh;
+                    let sourceElement = null; let sw, sh;
 
                     if (activeClip.type === 'image/gif' && gifCache[activeClip.id]) {
                         const gifData = gifCache[activeClip.id];
                         const clipInternalTime = (timeInSeconds - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
                         const loopTime = clipInternalTime % gifData.totalDuration;
                         const frameObj = gifData.frames.find(f => loopTime >= f.startTime && loopTime < (f.startTime + f.duration));
-                        if (frameObj) {
-                            sourceElement = frameObj.image;
-                            sw = sourceElement.displayWidth;
-                            sh = sourceElement.displayHeight;
-                        }
+                        if (frameObj) { sourceElement = frameObj.image; sw = sourceElement.displayWidth; sh = sourceElement.displayHeight; }
                     }
                     else if (activeClip.type.startsWith('video')) {
                         sourceElement = videoRef;
-                        if (!videoRef.src.includes(activeClip.fileUrl)) {
-                            videoRef.src = activeClip.fileUrl;
-                            await new Promise(r => videoRef.onloadedmetadata = r);
-                        }
+                        if (!videoRef.src.includes(activeClip.fileUrl)) { videoRef.src = activeClip.fileUrl; await new Promise(r => videoRef.onloadedmetadata = r); }
                         const seekTime = (timeInSeconds - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
                         await new Promise((resolve) => {
                             const onSeeked = () => { videoRef.removeEventListener('seeked', onSeeked); resolve(); };
@@ -290,24 +331,16 @@
                     } 
                     else if (activeClip.type.startsWith('image')) {
                         sourceElement = imageRef;
-                        if (!imageRef.src.includes(activeClip.fileUrl)) {
-                            imageRef.src = activeClip.fileUrl;
-                            await new Promise((resolve) => {
-                                if (imageRef.complete) resolve(); else imageRef.onload = resolve;
-                            });
-                        }
+                        if (!imageRef.src.includes(activeClip.fileUrl)) { imageRef.src = activeClip.fileUrl; await new Promise(r => { if (imageRef.complete) r(); else imageRef.onload = r; }); }
                         sw = imageRef.naturalWidth; sh = imageRef.naturalHeight;
                     }
 
                     if (sourceElement && sw && sh) {
                         const r = Math.min(width / sw, height / sh);
-                        const dw = sw * r;
-                        const dh = sh * r;
-
+                        const dw = sw * r; const dh = sh * r;
                         const scale = activeClip.scale || 1.0;
                         const posX = activeClip.positionX || 0;
                         const posY = activeClip.positionY || 0;
-
                         ctx.save();
                         ctx.translate(width / 2 + posX, height / 2 + posY);
                         ctx.scale(scale, scale);
@@ -318,9 +351,7 @@
 
                 if (activeText) {
                     ctx.font = `${activeText.fontWeight || 'bold'} ${activeText.fontSize}px ${activeText.fontFamily || 'Arial, sans-serif'}`;
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                     const x = (activeText.x / 100) * width;
                     const y = (activeText.y / 100) * height;
                     const padding = 10;
@@ -332,14 +363,12 @@
                         ctx.fillStyle = activeText.backgroundColor;
                         ctx.fillRect(x - textWidth/2 - padding, y - textHeight/2 - padding, textWidth + padding*2, textHeight + padding*2);
                     }
-
                     if (activeText.strokeWidth > 0) {
                         ctx.lineJoin = 'round'; ctx.miterLimit = 2;
                         ctx.lineWidth = activeText.strokeWidth;
                         ctx.strokeStyle = activeText.strokeColor;
                         ctx.strokeText(activeText.text, x, y);
                     }
-
                     ctx.fillStyle = activeText.color;
                     ctx.fillText(activeText.text, x, y);
                 }
@@ -349,10 +378,8 @@
                 videoEncoder.encode(frame, { keyFrame });
                 frame.close();
             }
-            
-            Object.values(gifCache).forEach(data => {
-                data.frames.forEach(f => f.image.close());
-            });
+
+            Object.values(gifCache).forEach(data => data.frames.forEach(f => f.image.close()));
 
             await videoEncoder.flush();
             muxer.finalize();
@@ -360,9 +387,7 @@
             const { buffer } = muxer.target;
             const blob = new Blob([buffer], { type: 'video/mp4' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); 
-            a.href = url; 
-            a.download = `fastvideocutter_export_${Date.now()}.mp4`;
+            const a = document.createElement('a'); a.href = url; a.download = `fastvideocutter_export_${Date.now()}.mp4`;
             document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); isExporting.set(false); startExportTrigger.set(0); }, 1000);
 
@@ -373,12 +398,8 @@
                     body: JSON.stringify({ type: 'export', filename: 'Exported Video', duration: durationInSeconds.toFixed(1) })
                 }).catch(e => console.warn("Webhook failed", e));
             }
-
         } catch (err) {
-            console.error(err);
-            alert(`Export Failed: ${err.message}`);
-            isExporting.set(false);
-            startExportTrigger.set(0);
+            console.error(err); alert(`Export Failed: ${err.message}`); isExporting.set(false); startExportTrigger.set(0);
         }
     }
 
@@ -411,11 +432,7 @@
         const length = inputL.length + inputR.length;
         const result = new Float32Array(length);
         let index = 0, inputIndex = 0;
-        while (index < length) {
-            result[index++] = inputL[inputIndex];
-            result[index++] = inputR[inputIndex];
-            inputIndex++;
-        }
+        while (index < length) { result[index++] = inputL[inputIndex]; result[index++] = inputR[inputIndex]; inputIndex++; }
         return result;
     }
 
@@ -428,7 +445,7 @@
     $: activeAudioClip = $audioTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
     $: activeTextClip = $textTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
 
-    // 1. Sync Video / Image
+    // Sync Video
     $: if (!$isExporting && !isSourceMode) {
         if (activeClip) {
             if (activeClip.type.startsWith('video')) {
@@ -436,7 +453,7 @@
                     if (!videoRef.src.includes(activeClip.fileUrl)) videoRef.src = activeClip.fileUrl;
                     videoRef.volume = activeClip.volume !== undefined ? activeClip.volume : 1.0;
                     const seekTime = ($currentTime - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
-                    if (!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) {
+                    if ((!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) && !videoRef.seeking) {
                         videoRef.currentTime = seekTime;
                     }
                 }
@@ -449,13 +466,13 @@
         }
     }
 
-    // 2. Sync Audio
+    // Sync Audio
     $: if (!$isExporting && !isSourceMode) {
         if (activeAudioClip && audioRef) {
             if (!audioRef.src.includes(activeAudioClip.fileUrl)) audioRef.src = activeAudioClip.fileUrl;
             audioRef.volume = activeAudioClip.volume !== undefined ? activeAudioClip.volume : 1.0;
             const audioSeekTime = ($currentTime - activeAudioClip.startOffset) + (activeAudioClip.mediaStartOffset || 0);
-            if (!$isPlaying || Math.abs(audioRef.currentTime - audioSeekTime) > 0.25) {
+            if ((!$isPlaying || Math.abs(audioRef.currentTime - audioSeekTime) > 0.25) && !audioRef.seeking) {
                 audioRef.currentTime = audioSeekTime;
             }
         } else if (audioRef) {
@@ -463,18 +480,14 @@
         }
     }
 
-    // 3. Source Preview Mode
+    // Source Preview Mode
     $: if (isSourceMode && !$isExporting) {
         const src = $currentVideoSource;
         if (src.type.startsWith('video')) {
-            if (videoRef && videoRef.src !== src.url) {
-                videoRef.src = src.url; videoRef.volume = 1.0; videoRef.play().catch(() => {});
-            }
+            if (videoRef && videoRef.src !== src.url) { videoRef.src = src.url; videoRef.volume = 1.0; videoRef.play().catch(() => {}); }
             if (audioRef) audioRef.pause();
         } else if (src.type.startsWith('audio')) {
-            if (audioRef && audioRef.src !== src.url) {
-                audioRef.src = src.url; audioRef.volume = 1.0; audioRef.play().catch(() => {});
-            }
+            if (audioRef && audioRef.src !== src.url) { audioRef.src = src.url; audioRef.volume = 1.0; audioRef.play().catch(() => {}); }
             if (videoRef) { videoRef.pause(); videoRef.removeAttribute('src'); }
         } else if (src.type.startsWith('image')) {
             if (imageRef && imageRef.src !== src.url) imageRef.src = src.url;
@@ -482,7 +495,7 @@
         }
     }
 
-    // 4. Play/Pause Control
+    // Play/Pause Control
     $: if (!$isExporting) {
         if ($isPlaying && !isSourceMode) {
             if (videoRef && activeClip && activeClip.type.startsWith('video')) videoRef.play().catch(() => {});
@@ -494,7 +507,7 @@
         }
     }
 
-    // 5. Loop Logic
+    // Loop Logic
     $: if ($isPlaying && !$isExporting && !isSourceMode) {
         lastTime = performance.now();
         requestAnimationFrame(loop);
@@ -537,111 +550,6 @@
         e.dataTransfer.setData('application/json', dragData);
         e.dataTransfer.effectAllowed = 'copy';
     }
-
-    async function loadSampleProject() {
-        console.group("🔍 [Debug] 開始載入範例專案");
-        try {
-            isProcessingDrag = true; 
-
-            // 1. 檢查 fetch
-            console.log("1. 正在下載檔案...");
-            const [vidRes, audRes] = await Promise.all([
-                fetch('/sample_video.mp4'),
-                fetch('/sample_audio.mp3')
-            ]);
-            
-            if (!vidRes.ok) throw new Error(`Video fetch failed: ${vidRes.status}`);
-            if (!audRes.ok) throw new Error(`Audio fetch failed: ${audRes.status}`);
-            console.log("✅ 檔案下載成功");
-
-            const vidBlob = await vidRes.blob();
-            const audBlob = await audRes.blob();
-            console.log(`   - Video size: ${vidBlob.size}`);
-            console.log(`   - Audio size: ${audBlob.size}`);
-
-            // 2. 轉換 File
-            const vidFile = new File([vidBlob], "Demo_Video.mp4", { type: "video/mp4" });
-            const audFile = new File([audBlob], "Demo_Music.mp3", { type: "audio/mpeg" });
-
-            // 3. 處理影片
-            console.log("2. 正在處理影片...");
-            const vidUrl = URL.createObjectURL(vidFile);
-            
-            console.time("getMediaDuration");
-            // 🔥 這裡是最可能出錯的地方，我們加強容錯
-            let vidDuration = await getMediaDuration(vidFile, vidUrl);
-            console.timeEnd("getMediaDuration");
-            console.log("   - 原始 Duration:", vidDuration);
-
-            if (vidDuration === null) {
-                console.warn("⚠️ Duration 讀取失敗，使用預設值 10s");
-                vidDuration = 10;
-            }
-
-            console.log("3. 正在生成縮圖...");
-            const thumbs = await generateThumbnails(vidFile, vidDuration);
-            const thumbUrls = thumbs.map(b => URL.createObjectURL(b));
-            console.log(`   - 生成了 ${thumbs.length} 張縮圖`);
-
-            // 4. 處理音訊
-            console.log("4. 正在處理音訊...");
-            const audUrl = URL.createObjectURL(audFile);
-            let audDuration = await getMediaDuration(audFile, audUrl);
-            if (!audDuration) audDuration = 10; // 防呆
-            
-            const waveform = await generateWaveform(audFile);
-            console.log("   - 波形生成完畢");
-
-            // 5. 寫入 Store
-            console.log("5. 寫入 Store...");
-            
-            // 素材庫
-            const sampleFiles = [
-                { name: vidFile.name, type: vidFile.type, url: vidUrl, duration: vidDuration, file: vidFile, thumbnails: thumbs, thumbnailUrls: thumbUrls },
-                { name: audFile.name, type: audFile.type, url: audUrl, duration: audDuration, file: audFile, waveform: waveform }
-            ];
-            uploadedFiles.update(curr => [...curr, ...sampleFiles]);
-
-            // 時間軸 - Video
-            const videoClip = {
-                id: generateId(), fileUrl: vidUrl, name: vidFile.name, type: vidFile.type,
-                startOffset: 0, duration: vidDuration, sourceDuration: vidDuration, mediaStartOffset: 0, volume: 1.0,
-                file: vidFile, thumbnails: thumbs, thumbnailUrls: thumbUrls
-            };
-            mainTrackClips.update(clips => [videoClip]);
-
-            // 時間軸 - Audio
-            const audioClip = {
-                id: generateId(), fileUrl: audUrl, name: audFile.name, type: audFile.type,
-                startOffset: 0, duration: audDuration, sourceDuration: audDuration, mediaStartOffset: 0, volume: 0.5,
-                file: audFile, waveform: waveform
-            };
-            audioTrackClips.update(clips => [audioClip]);
-
-            // 時間軸 - Text
-            const textClip = createTextClip(0);            
-            textClip.text = "✨FastVideoCutter.com";
-            textClip.duration = 3.2;
-            textClip.fontSize = 28;      // 🔥 縮小字體 (原本 40)
-            textClip.x = 80;             // 🔥 移到右邊 (0-100%)
-            textClip.y = 85;             // 🔥 移到底部 (0-100%)
-            textClip.showBackground = true;
-            textClip.backgroundColor = "#00000080"; // 
-            textClip.strokeWidth = 0;
-            textTrackClips.update(clips => [textClip]);
-
-            console.log("✅ 全部完成！");
-
-        } catch (e) {
-            console.error("❌ [Critical Error] Load sample failed:", e);
-            alert(`載入失敗: ${e.message}\n請查看 Console 獲取詳細資訊。`);
-        } finally {
-            isProcessingDrag = false;
-            console.groupEnd();
-        }
-    }
-
-
 </script>
 
 <div class="flex-1 bg-[#101010] relative flex flex-col justify-center items-center overflow-hidden w-full h-full select-none">
@@ -670,25 +578,18 @@
         {/if}
         
         {#if !isSourceMode && activeTextClip}
-            <div class="absolute pointer-events-none text-center select-none" style="top: {activeTextClip.y}%; left: {activeTextClip.x}%; transform: translate(-50%, -50%); font-size: {activeTextClip.fontSize}px; color: {activeTextClip.color}; font-family: {activeTextClip.fontFamily || 'Arial, sans-serif'}; font-weight: {activeTextClip.fontWeight || 'bold'}; white-space: pre-wrap; paint-order: stroke fill; -webkit-text-stroke: {activeTextClip.strokeWidth}px {activeTextClip.strokeColor}; background-color: {activeTextClip.showBackground ? activeTextClip.backgroundColor : 'transparent'}; padding: {activeTextClip.showBackground ? '10px 20px' : '0'}; border-radius: 8px;">{activeTextClip.text}</div>
+            <div class="absolute pointer-events-none text-center select-none" style="top: {activeTextClip.y}%; left: {activeTextClip.x}%; transform: translate(-50%, -50%); font-size: {activeTextClip.fontSize * previewRatio}px; color: {activeTextClip.color}; font-family: {activeTextClip.fontFamily || 'Arial, sans-serif'}; font-weight: {activeTextClip.fontWeight || 'bold'}; white-space: pre-wrap; paint-order: stroke fill; -webkit-text-stroke: {activeTextClip.strokeWidth * previewRatio}px {activeTextClip.strokeColor}; background-color: {activeTextClip.showBackground ? activeTextClip.backgroundColor : 'transparent'}; padding: {activeTextClip.showBackground ? `${10 * previewRatio}px ${20 * previewRatio}px` : '0'}; border-radius: {8 * previewRatio}px;">{activeTextClip.text}</div>
         {/if}
 
-        <!-- Overlays -->
         {#if isSourceMode}
              <div class="absolute top-4 left-4 z-20">
                 <button class="bg-black/60 hover:bg-red-600/90 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-all backdrop-blur-md shadow-lg cursor-pointer pointer-events-auto text-xs font-bold border border-white/10 hover:border-red-500/50" title="Close Preview & Back to Timeline" on:click|stopPropagation={() => currentVideoSource.set(null)}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg><span>Exit Preview</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg><span>Exit Preview</span>
                 </button>
              </div>
-
-             <!-- 🔥 Add to Timeline Button (Fixed Position) -->
              <div class="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
-                <button 
-                    class="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold text-sm transition-all shadow-lg shadow-cyan-500/30 flex items-center gap-2 border border-cyan-400/50 hover:scale-105 pointer-events-auto"
-                    on:click|stopPropagation={addToProject}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    Add to Timeline
+                <button class="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold text-sm transition-all shadow-lg shadow-cyan-500/30 flex items-center gap-2 border border-cyan-400/50 hover:scale-105 pointer-events-auto" on:click|stopPropagation={addToProject}>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>Add to Timeline
                 </button>
              </div>
         {/if}
@@ -705,15 +606,8 @@
                     <h3 class="text-xl font-bold text-white mb-2">Start Creating</h3>
                     <p class="text-slate-400 text-sm mb-8 max-w-xs text-center leading-relaxed">Drag & drop your video here,<br>or click the button below.</p>
                     <button on:click|stopPropagation={triggerUpload} class="bg-cyan-600 hover:bg-cyan-500 text-white px-8 py-3 rounded-full font-bold text-sm transition-all shadow-lg shadow-cyan-500/20 flex items-center gap-2 pointer-events-auto"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Import Video</button>
-                     <!-- 🔥 次要按鈕：Try Sample -->
-                     <button 
-                     on:click|stopPropagation={loadSampleProject}
-                     class="text-slate-400 hover:text-white text-sm underline decoration-slate-600 underline-offset-4 transition-colors pointer-events-auto mt-4"
-                 >
-                     No video? Try sample project
-                 </button>
-                
-                    {/if}
+                    <button on:click|stopPropagation={loadSampleProject} class="text-slate-400 hover:text-white text-sm underline decoration-slate-600 underline-offset-4 transition-colors pointer-events-auto mt-4">No video? Try sample project</button>
+                {/if}
             </div>
         {/if}
       

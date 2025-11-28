@@ -1,20 +1,23 @@
 import { writable, get } from 'svelte/store';
 
-// 軌道資料
 export const mainTrackClips = writable([]);
 export const audioTrackClips = writable([]);
 export const textTrackClips = writable([]);
-
-// 狀態資料
 export const selectedClipIds = writable([]);
 export const draggedFile = writable(null);
 
-// 🔥🔥🔥 修正：補上 uploadedFiles (素材庫) 🔥🔥🔥
+// 🔥 新增：專案設定
+export const projectSettings = writable({
+    width: 1280,
+    height: 720,
+    aspectRatio: '16:9'
+});
+
+// 新增：素材庫 Store
 export const uploadedFiles = writable([]); 
 
 export const generateId = () => '_' + Math.random().toString(36).substr(2, 9);
 
-// Helper: 建立一般 Clip (Video/Image/Audio)
 export const createClip = (fileData, startOffset, rawFile = null) => ({
     id: generateId(),
     fileUrl: fileData.url,
@@ -22,44 +25,44 @@ export const createClip = (fileData, startOffset, rawFile = null) => ({
     type: fileData.type,
     startOffset: startOffset,
     duration: fileData.duration || 5,
-    // 圖片無限長，影片固定長
     sourceDuration: fileData.type.startsWith('image') ? Infinity : (fileData.duration || 5),
     mediaStartOffset: 0,
     volume: 1.0,
-    file: rawFile, // 原始檔案 (IndexedDB 用)
-    thumbnailUrls: fileData.thumbnailUrls, // 縮圖 URL
-    // 🔥 新增：變形屬性 (Transform)
-    scale: 1.0,      // 縮放倍率
-    positionX: 0,    // X 軸位移 (像素)
-    positionY: 0     // Y 軸位移 (像素)
+    file: rawFile,
+    thumbnailUrls: fileData.thumbnailUrls,
+    // Transform
+    scale: 1.0,
+    positionX: 0,
+    positionY: 0
 });
 
-// Helper: 建立文字 Clip
-export const createTextClip = (startOffset) => ({
-    id: generateId(),
-    type: 'text',
-    name: 'Text',
-    startOffset: startOffset,
-    duration: 3,
-    sourceDuration: Infinity,
-    mediaStartOffset: 0,
-    text: 'New Text',
-    fontSize: 40,
-    color: '#ffffff',  // 白字
-    fontWeight: 'normal', // 新增屬性，預設不加粗
-     // 🔥 新增：字體屬性 (預設用 Arial)
-     fontFamily: '"Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
-    x: 50, 
-    y: 50,
-    volume: 1.0 ,
-    // 🔥 新增：背景與邊框屬性
-    showBackground: true,      // 是否顯示背景
-    backgroundColor: '#00000080', // 黑色 + 50% 透明度 (80是Hex的透明度)
-    strokeWidth: 0,             // 描邊寬度 (0 代表無)
-    strokeColor: '#000000'      // 描邊顏色
-});
+    // Helper: 建立文字 Clip
+    export const createTextClip = (startOffset) => ({
+        id: generateId(),
+        type: 'text',
+        name: 'Text',
+        startOffset: startOffset,
+        duration: 3,
+        sourceDuration: Infinity,
+        mediaStartOffset: 0,
+        text: 'New Text',
+        fontSize: 40,
+        color: '#ffffff',  // 白字
+        fontWeight: 'normal', // 新增屬性，預設不加粗
+         // 🔥 新增：字體屬性 (預設用 Arial)
+         fontFamily: '"Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
+        x: 50, 
+        y: 50,
+        volume: 1.0 ,
+        // 🔥 新增：背景與邊框屬性
+        showBackground: true,      // 是否顯示背景
+        backgroundColor: '#00000080', // 黑色 + 50% 透明度 (80是Hex的透明度)
+        strokeWidth: 0,             // 描邊寬度 (0 代表無)
+        strokeColor: '#000000'      // 描邊顏色
+    });
+    
 
-// Helper: 解決重疊 (Ripple Edit)
+// 🔥🔥🔥 核心邏輯：解決重疊與推擠 🔥🔥🔥
 export function resolveOverlaps(clips, activeId = null) {
     if (clips.length === 0) return [];
 
@@ -67,8 +70,7 @@ export function resolveOverlaps(clips, activeId = null) {
     const sortedClips = [...clips].sort((a, b) => {
         if (a.id === b.id) return 0;
         const diff = a.startOffset - b.startOffset;
-        // 優先權判斷
-        if (Math.abs(diff) < 0.1) {
+        if (Math.abs(diff) < 0.01) { // 提高精度判定
             if (a.id === activeId) return -1; 
             if (b.id === activeId) return 1; 
         }
@@ -81,22 +83,21 @@ export function resolveOverlaps(clips, activeId = null) {
         const currentClip = sortedClips[i];
         const prevEnd = prevClip.startOffset + prevClip.duration;
         
-        if (currentClip.startOffset < prevEnd) {
+        // 容錯：如果重疊超過 0.001s 才推擠，避免浮點數誤差
+        if (currentClip.startOffset < prevEnd - 0.001) {
             currentClip.startOffset = prevEnd; 
         }
     }
     return sortedClips;
 }
 
-// Helper: 分割片段 (Split)
+// 🔥🔥🔥 修復：Split Logic (加入 resolveOverlaps) 🔥🔥🔥
 export function splitClip(clipId, splitTime) {
-    // 1. 嘗試在 Main Track 找
     let track = 'main';
     let store = mainTrackClips;
     let clips = get(mainTrackClips);
     let clipIndex = clips.findIndex(c => c.id === clipId);
 
-    // 2. 沒找到就去 Audio Track 找
     if (clipIndex === -1) {
         track = 'audio';
         store = audioTrackClips;
@@ -104,7 +105,6 @@ export function splitClip(clipId, splitTime) {
         clipIndex = clips.findIndex(c => c.id === clipId);
     }
     
-    // 3. 沒找到就去 Text Track 找
     if (clipIndex === -1) {
         track = 'text';
         store = textTrackClips;
@@ -119,7 +119,7 @@ export function splitClip(clipId, splitTime) {
 
     // 檢查分割點有效性
     if (splitTime <= clip.startOffset + 0.1 || splitTime >= clipEnd - 0.1) {
-        console.warn("分割點無效");
+        alert("無法分割：太靠近邊緣");
         return;
     }
 
@@ -128,35 +128,39 @@ export function splitClip(clipId, splitTime) {
     const newDurationB = clipEnd - splitTime;
     const newMediaStartB = (clip.mediaStartOffset || 0) + newDurationA;
 
+    // Clip A (更新原片段)
     const updatedClipA = { 
         ...clip, 
         duration: newDurationA 
     };
 
+    // Clip B (新片段)
     const newClipB = {
         ...clip,
         id: generateId(),
         startOffset: splitTime,
         duration: newDurationB,
         mediaStartOffset: newMediaStartB,
-        // 複製其他屬性
+        // 複製屬性
         volume: clip.volume, 
         file: clip.file,
-        text: clip.text, // 文字軌專用
-        thumbnailUrls: clip.thumbnailUrls 
+        text: clip.text, 
+        thumbnailUrls: clip.thumbnailUrls,
+        scale: clip.scale,
+        positionX: clip.positionX,
+        positionY: clip.positionY,
+        thumbnails: clip.thumbnails, // 記得複製 blob
+        waveform: clip.waveform
     };
 
-    // 寫回 Store
-    const newClipsList = [...clips];
+    // 更新陣列
+    let newClipsList = [...clips];
     newClipsList[clipIndex] = updatedClipA;
     newClipsList.splice(clipIndex + 1, 0, newClipB);
 
+    // 🔥 關鍵：執行重排，確保沒有浮點數誤差導致的重疊
+    // 我們傳入 newClipB.id 作為 activeId，確保它排在後面
+    newClipsList = resolveOverlaps(newClipsList, newClipB.id);
+
     store.set(newClipsList);
 }
-
-// 🔥 新增：專案全域設定 (預設 16:9)
-export const projectSettings = writable({
-    width: 1280,
-    height: 720,
-    aspectRatio: '16:9'
-});

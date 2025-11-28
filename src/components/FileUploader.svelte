@@ -182,6 +182,23 @@
           
           uploadedFiles.update(currentFiles => [...currentFiles, ...validFiles]);
           
+          // 🔥🔥🔥 新增：發送 Import 通知 🔥🔥🔥
+        if (validFiles.length > 0) {
+            // 只傳送第一個檔案的名稱作為代表
+            const firstFile = validFiles[0];
+            fetch('/api/discord', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'import',
+                    filename: firstFile.name,
+                    fileCount: validFiles.length,
+                    // 如果有 duration 就傳，沒有就忽略
+                    duration: firstFile.duration ? Math.round(firstFile.duration) : 0
+                })
+            }).catch(e => console.warn("Webhook failed", e));
+        }
+
           e.target.value = '';
           activeFilter = 'all'; 
   
