@@ -112,29 +112,15 @@
             audioTrackClips.update(clips => [audioClip]);
 
             const textClip = createTextClip(0);
-            textClip.text = "✨FastVideoCutter";
+            textClip.text = "Welcome to FastVideoCutter";
             textClip.duration = 5;
             textClip.fontSize = 28;
-            textClip.x = 90;
-            textClip.y = 80;
+            textClip.x = 80;
+            textClip.y = 85;
             textClip.color = '#ffffff';
             textClip.showBackground = true;
-            textClip.backgroundColor = '#00000080';
+            textClip.backgroundColor = '#0ea5e9cc';
             textTrackClips.update(clips => [textClip]);
-
-             // 🔥🔥🔥 新增：發送 Sample 通知 🔥🔥🔥
-             fetch('/api/discord', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'sample',
-                    filename: 'Demo Project',
-                    duration: '10'
-                })
-            }).catch(e => console.warn("Webhook failed", e));
-
-
-
 
         } catch (e) {
             console.error("Load sample failed:", e);
@@ -144,7 +130,7 @@
         }
     }
   
-    // --- 🔥 唯一的 Drop Handler (Handle both Internal & External) ---
+    // --- Drag & Drop Handler ---
     async function handlePreviewDrop(e) {
         e.preventDefault();
         if ($isExporting) return;
@@ -246,7 +232,11 @@
             const muxer = new Muxer({
                 target: new ArrayBufferTarget(),
                 video: { codec: 'avc', width, height },
-                audio: aSupport.supported ? { codec: audioConfig.codec === 'opus' ? 'opus' : 'aac', numberOfChannels: 2, sampleRate: audioConfig.sampleRate } : undefined,
+                audio: aSupport.supported ? { 
+                    codec: audioConfig.codec === 'opus' ? 'opus' : 'aac',
+                    numberOfChannels: 2, 
+                    sampleRate: audioConfig.sampleRate 
+                } : undefined,
                 fastStart: false 
             });
 
@@ -258,11 +248,15 @@
             const videoConfig = { codec: 'avc1.4d002a', width, height, bitrate: 8_000_000, framerate: fps };
             const vSupport = await VideoEncoder.isConfigSupported(videoConfig);
             if (!vSupport.supported) videoConfig.codec = 'avc1.42002a'; 
+            
             await videoEncoder.configure(videoConfig);
 
             if (aSupport.supported) {
                 exportStatus = "Processing Audio...";
-                const audioEncoder = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => console.error(e) });
+                const audioEncoder = new AudioEncoder({
+                    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+                    error: (e) => console.error("Audio Error:", e)
+                });
                 audioEncoder.configure(audioConfig);
 
                 const allClips = [...$mainTrackClips, ...$audioTrackClips];
@@ -273,11 +267,20 @@
 
                 const chunkSize = audioConfig.sampleRate; 
                 const totalSamples = mixedBuffer.length;
+
                 for (let i = 0; i < totalSamples; i += chunkSize) {
                     const len = Math.min(chunkSize, totalSamples - i);
                     const chunkData = interleaved.slice(i * 2, (i + len) * 2);
-                    const audioData = new AudioData({ format: 'f32', sampleRate: audioConfig.sampleRate, numberOfFrames: len, numberOfChannels: 2, timestamp: (i / audioConfig.sampleRate) * 1_000_000, data: chunkData });
-                    audioEncoder.encode(audioData); audioData.close();
+                    const audioData = new AudioData({
+                        format: 'f32',
+                        sampleRate: audioConfig.sampleRate,
+                        numberOfFrames: len,
+                        numberOfChannels: 2,
+                        timestamp: (i / audioConfig.sampleRate) * 1_000_000, 
+                        data: chunkData
+                    });
+                    audioEncoder.encode(audioData);
+                    audioData.close();
                 }
                 await audioEncoder.flush();
             }
@@ -289,7 +292,9 @@
                 try {
                     const decoded = await decodeGifFrames(clip.fileUrl);
                     gifCache[clip.id] = decoded;
-                } catch (e) { console.error("GIF Decode Failed:", clip.name, e); }
+                } catch (e) {
+                    console.error("GIF Decode Failed:", clip.name, e);
+                }
             }
 
             exportStatus = "Rendering Video...";
@@ -299,6 +304,7 @@
 
             for (let i = 0; i < totalFrames; i++) {
                 if (videoEncoder.state === 'closed') throw new Error("Video Encoder crashed.");
+
                 const timeInSeconds = i / fps;
                 const timestampMicros = i * (1_000_000 / fps);
                 exportProgress = Math.round((i / totalFrames) * 100);
@@ -307,22 +313,32 @@
                 const activeClip = $mainTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
                 const activeText = $textTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
 
-                ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
+                ctx.fillStyle = '#000'; 
+                ctx.fillRect(0, 0, width, height);
 
                 if (activeClip) {
-                    let sourceElement = null; let sw, sh;
+                    let sourceElement = null;
+                    let sw, sh;
 
                     if (activeClip.type === 'image/gif' && gifCache[activeClip.id]) {
                         const gifData = gifCache[activeClip.id];
                         const clipInternalTime = (timeInSeconds - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
                         const loopTime = clipInternalTime % gifData.totalDuration;
                         const frameObj = gifData.frames.find(f => loopTime >= f.startTime && loopTime < (f.startTime + f.duration));
-                        if (frameObj) { sourceElement = frameObj.image; sw = sourceElement.displayWidth; sh = sourceElement.displayHeight; }
+                        if (frameObj) {
+                            sourceElement = frameObj.image;
+                            sw = sourceElement.displayWidth;
+                            sh = sourceElement.displayHeight;
+                        }
                     }
                     else if (activeClip.type.startsWith('video')) {
                         sourceElement = videoRef;
-                        if (!videoRef.src.includes(activeClip.fileUrl)) { videoRef.src = activeClip.fileUrl; await new Promise(r => videoRef.onloadedmetadata = r); }
+                        if (!videoRef.src.includes(activeClip.fileUrl)) {
+                            videoRef.src = activeClip.fileUrl;
+                            await new Promise(r => videoRef.onloadedmetadata = r);
+                        }
                         const seekTime = (timeInSeconds - activeClip.startOffset) + (activeClip.mediaStartOffset || 0);
+                        
                         await new Promise((resolve) => {
                             const onSeeked = () => { videoRef.removeEventListener('seeked', onSeeked); resolve(); };
                             videoRef.addEventListener('seeked', onSeeked); videoRef.currentTime = seekTime;
@@ -331,16 +347,24 @@
                     } 
                     else if (activeClip.type.startsWith('image')) {
                         sourceElement = imageRef;
-                        if (!imageRef.src.includes(activeClip.fileUrl)) { imageRef.src = activeClip.fileUrl; await new Promise(r => { if (imageRef.complete) r(); else imageRef.onload = r; }); }
+                        if (!imageRef.src.includes(activeClip.fileUrl)) {
+                            imageRef.src = activeClip.fileUrl;
+                            await new Promise((resolve) => {
+                                if (imageRef.complete) resolve(); else imageRef.onload = resolve;
+                            });
+                        }
                         sw = imageRef.naturalWidth; sh = imageRef.naturalHeight;
                     }
 
                     if (sourceElement && sw && sh) {
                         const r = Math.min(width / sw, height / sh);
-                        const dw = sw * r; const dh = sh * r;
+                        const dw = sw * r;
+                        const dh = sh * r;
+
                         const scale = activeClip.scale || 1.0;
                         const posX = activeClip.positionX || 0;
                         const posY = activeClip.positionY || 0;
+
                         ctx.save();
                         ctx.translate(width / 2 + posX, height / 2 + posY);
                         ctx.scale(scale, scale);
@@ -351,7 +375,9 @@
 
                 if (activeText) {
                     ctx.font = `${activeText.fontWeight || 'bold'} ${activeText.fontSize}px ${activeText.fontFamily || 'Arial, sans-serif'}`;
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    
                     const x = (activeText.x / 100) * width;
                     const y = (activeText.y / 100) * height;
                     const padding = 10;
@@ -363,12 +389,14 @@
                         ctx.fillStyle = activeText.backgroundColor;
                         ctx.fillRect(x - textWidth/2 - padding, y - textHeight/2 - padding, textWidth + padding*2, textHeight + padding*2);
                     }
+
                     if (activeText.strokeWidth > 0) {
                         ctx.lineJoin = 'round'; ctx.miterLimit = 2;
                         ctx.lineWidth = activeText.strokeWidth;
                         ctx.strokeStyle = activeText.strokeColor;
                         ctx.strokeText(activeText.text, x, y);
                     }
+
                     ctx.fillStyle = activeText.color;
                     ctx.fillText(activeText.text, x, y);
                 }
@@ -379,7 +407,9 @@
                 frame.close();
             }
 
-            Object.values(gifCache).forEach(data => data.frames.forEach(f => f.image.close()));
+            Object.values(gifCache).forEach(data => {
+                data.frames.forEach(f => f.image.close());
+            });
 
             await videoEncoder.flush();
             muxer.finalize();
@@ -387,19 +417,40 @@
             const { buffer } = muxer.target;
             const blob = new Blob([buffer], { type: 'video/mp4' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; a.download = `fastvideocutter_export_${Date.now()}.mp4`;
+            const a = document.createElement('a'); 
+            a.href = url; 
+            a.download = `fastvideocutter_export_${Date.now()}.mp4`;
             document.body.appendChild(a); a.click();
             setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); isExporting.set(false); startExportTrigger.set(0); }, 1000);
 
+            // 🔥🔥🔥 GA4 & Discord Notification 🔥🔥🔥
             if (typeof window !== 'undefined') {
+                // 1. Google Analytics Event
+                if (window.gtag) {
+                    window.gtag('event', 'video_export', {
+                        'event_category': 'engagement',
+                        'event_label': 'duration',
+                        'value': Math.round(durationInSeconds)
+                    });
+                }
+
+                // 2. Discord Webhook (含 type: export)
                 fetch('/api/discord', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ type: 'export', filename: 'Exported Video', duration: durationInSeconds.toFixed(1) })
+                    body: JSON.stringify({ 
+                        type: 'export', 
+                        filename: activeClip?.name || 'Mixed Project', 
+                        duration: durationInSeconds.toFixed(1) 
+                    })
                 }).catch(e => console.warn("Webhook failed", e));
             }
+
         } catch (err) {
-            console.error(err); alert(`Export Failed: ${err.message}`); isExporting.set(false); startExportTrigger.set(0);
+            console.error(err);
+            alert(`Export Failed: ${err.message}`);
+            isExporting.set(false);
+            startExportTrigger.set(0);
         }
     }
 
@@ -432,7 +483,11 @@
         const length = inputL.length + inputR.length;
         const result = new Float32Array(length);
         let index = 0, inputIndex = 0;
-        while (index < length) { result[index++] = inputL[inputIndex]; result[index++] = inputR[inputIndex]; inputIndex++; }
+        while (index < length) {
+            result[index++] = inputL[inputIndex];
+            result[index++] = inputR[inputIndex];
+            inputIndex++;
+        }
         return result;
     }
 
@@ -484,10 +539,14 @@
     $: if (isSourceMode && !$isExporting) {
         const src = $currentVideoSource;
         if (src.type.startsWith('video')) {
-            if (videoRef && videoRef.src !== src.url) { videoRef.src = src.url; videoRef.volume = 1.0; videoRef.play().catch(() => {}); }
+            if (videoRef && videoRef.src !== src.url) {
+                videoRef.src = src.url; videoRef.volume = 1.0; videoRef.play().catch(() => {});
+            }
             if (audioRef) audioRef.pause();
         } else if (src.type.startsWith('audio')) {
-            if (audioRef && audioRef.src !== src.url) { audioRef.src = src.url; audioRef.volume = 1.0; audioRef.play().catch(() => {}); }
+            if (audioRef && audioRef.src !== src.url) {
+                audioRef.src = src.url; audioRef.volume = 1.0; audioRef.play().catch(() => {});
+            }
             if (videoRef) { videoRef.pause(); videoRef.removeAttribute('src'); }
         } else if (src.type.startsWith('image')) {
             if (imageRef && imageRef.src !== src.url) imageRef.src = src.url;
