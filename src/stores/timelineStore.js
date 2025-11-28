@@ -45,7 +45,7 @@ export const createTextClip = (startOffset) => ({
     mediaStartOffset: 0,
     text: 'New Text',
     fontSize: 40,
-    color: '#ffffff',
+    color: '#ffffff',  // 白字
     fontWeight: 'normal', // 新增屬性，預設不加粗
      // 🔥 新增：字體屬性 (預設用 Arial)
      fontFamily: '"Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
@@ -53,10 +53,10 @@ export const createTextClip = (startOffset) => ({
     y: 50,
     volume: 1.0 ,
     // 🔥 新增：背景與邊框屬性
-    showBackground: false,      // 是否顯示背景
-    backgroundColor: '#38bdf8', // 背景顏色
-    strokeWidth: 2,             // 描邊寬度 (0 代表無)
-    strokeColor: '#FFFF00'      // 描邊顏色
+    showBackground: true,      // 是否顯示背景
+    backgroundColor: '#00000080', // 黑色 + 50% 透明度 (80是Hex的透明度)
+    strokeWidth: 0,             // 描邊寬度 (0 代表無)
+    strokeColor: '#000000'      // 描邊顏色
 });
 
 // Helper: 解決重疊 (Ripple Edit)

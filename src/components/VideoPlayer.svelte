@@ -1,7 +1,7 @@
 <script>
     import { currentVideoSource, currentTime, isPlaying } from '../stores/playerStore';
     // 確保只引入一次 timelineStore
-    import { mainTrackClips, audioTrackClips, textTrackClips, draggedFile, projectSettings, uploadedFiles, generateId, resolveOverlaps } from '../stores/timelineStore';
+    import { mainTrackClips, audioTrackClips, textTrackClips, draggedFile, projectSettings, uploadedFiles, generateId, resolveOverlaps, createTextClip } from '../stores/timelineStore';
     import { isExporting, startExportTrigger } from '../stores/exportStore';
     import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
     import { get } from 'svelte/store';
@@ -537,6 +537,111 @@
         e.dataTransfer.setData('application/json', dragData);
         e.dataTransfer.effectAllowed = 'copy';
     }
+
+    async function loadSampleProject() {
+        console.group("🔍 [Debug] 開始載入範例專案");
+        try {
+            isProcessingDrag = true; 
+
+            // 1. 檢查 fetch
+            console.log("1. 正在下載檔案...");
+            const [vidRes, audRes] = await Promise.all([
+                fetch('/sample_video.mp4'),
+                fetch('/sample_audio.mp3')
+            ]);
+            
+            if (!vidRes.ok) throw new Error(`Video fetch failed: ${vidRes.status}`);
+            if (!audRes.ok) throw new Error(`Audio fetch failed: ${audRes.status}`);
+            console.log("✅ 檔案下載成功");
+
+            const vidBlob = await vidRes.blob();
+            const audBlob = await audRes.blob();
+            console.log(`   - Video size: ${vidBlob.size}`);
+            console.log(`   - Audio size: ${audBlob.size}`);
+
+            // 2. 轉換 File
+            const vidFile = new File([vidBlob], "Demo_Video.mp4", { type: "video/mp4" });
+            const audFile = new File([audBlob], "Demo_Music.mp3", { type: "audio/mpeg" });
+
+            // 3. 處理影片
+            console.log("2. 正在處理影片...");
+            const vidUrl = URL.createObjectURL(vidFile);
+            
+            console.time("getMediaDuration");
+            // 🔥 這裡是最可能出錯的地方，我們加強容錯
+            let vidDuration = await getMediaDuration(vidFile, vidUrl);
+            console.timeEnd("getMediaDuration");
+            console.log("   - 原始 Duration:", vidDuration);
+
+            if (vidDuration === null) {
+                console.warn("⚠️ Duration 讀取失敗，使用預設值 10s");
+                vidDuration = 10;
+            }
+
+            console.log("3. 正在生成縮圖...");
+            const thumbs = await generateThumbnails(vidFile, vidDuration);
+            const thumbUrls = thumbs.map(b => URL.createObjectURL(b));
+            console.log(`   - 生成了 ${thumbs.length} 張縮圖`);
+
+            // 4. 處理音訊
+            console.log("4. 正在處理音訊...");
+            const audUrl = URL.createObjectURL(audFile);
+            let audDuration = await getMediaDuration(audFile, audUrl);
+            if (!audDuration) audDuration = 10; // 防呆
+            
+            const waveform = await generateWaveform(audFile);
+            console.log("   - 波形生成完畢");
+
+            // 5. 寫入 Store
+            console.log("5. 寫入 Store...");
+            
+            // 素材庫
+            const sampleFiles = [
+                { name: vidFile.name, type: vidFile.type, url: vidUrl, duration: vidDuration, file: vidFile, thumbnails: thumbs, thumbnailUrls: thumbUrls },
+                { name: audFile.name, type: audFile.type, url: audUrl, duration: audDuration, file: audFile, waveform: waveform }
+            ];
+            uploadedFiles.update(curr => [...curr, ...sampleFiles]);
+
+            // 時間軸 - Video
+            const videoClip = {
+                id: generateId(), fileUrl: vidUrl, name: vidFile.name, type: vidFile.type,
+                startOffset: 0, duration: vidDuration, sourceDuration: vidDuration, mediaStartOffset: 0, volume: 1.0,
+                file: vidFile, thumbnails: thumbs, thumbnailUrls: thumbUrls
+            };
+            mainTrackClips.update(clips => [videoClip]);
+
+            // 時間軸 - Audio
+            const audioClip = {
+                id: generateId(), fileUrl: audUrl, name: audFile.name, type: audFile.type,
+                startOffset: 0, duration: audDuration, sourceDuration: audDuration, mediaStartOffset: 0, volume: 0.5,
+                file: audFile, waveform: waveform
+            };
+            audioTrackClips.update(clips => [audioClip]);
+
+            // 時間軸 - Text
+            const textClip = createTextClip(0);            
+            textClip.text = "✨FastVideoCutter.com";
+            textClip.duration = 3;
+            textClip.fontSize = 28;      // 🔥 縮小字體 (原本 40)
+            textClip.x = 80;             // 🔥 移到右邊 (0-100%)
+            textClip.y = 85;             // 🔥 移到底部 (0-100%)
+            textClip.showBackground = true;
+            textClip.backgroundColor = "#00000080"; // 
+            textClip.strokeWidth = 0;
+            textTrackClips.update(clips => [textClip]);
+
+            console.log("✅ 全部完成！");
+
+        } catch (e) {
+            console.error("❌ [Critical Error] Load sample failed:", e);
+            alert(`載入失敗: ${e.message}\n請查看 Console 獲取詳細資訊。`);
+        } finally {
+            isProcessingDrag = false;
+            console.groupEnd();
+        }
+    }
+
+
 </script>
 
 <div class="flex-1 bg-[#101010] relative flex flex-col justify-center items-center overflow-hidden w-full h-full select-none">
@@ -600,7 +705,15 @@
                     <h3 class="text-xl font-bold text-white mb-2">Start Creating</h3>
                     <p class="text-slate-400 text-sm mb-8 max-w-xs text-center leading-relaxed">Drag & drop your video here,<br>or click the button below.</p>
                     <button on:click|stopPropagation={triggerUpload} class="bg-cyan-600 hover:bg-cyan-500 text-white px-8 py-3 rounded-full font-bold text-sm transition-all shadow-lg shadow-cyan-500/20 flex items-center gap-2 pointer-events-auto"><svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Import Video</button>
-                {/if}
+                     <!-- 🔥 次要按鈕：Try Sample -->
+                     <button 
+                     on:click|stopPropagation={loadSampleProject}
+                     class="text-slate-400 hover:text-white text-sm underline decoration-slate-600 underline-offset-4 transition-colors pointer-events-auto mt-4"
+                 >
+                     No video? Try sample project
+                 </button>
+                
+                    {/if}
             </div>
         {/if}
       
