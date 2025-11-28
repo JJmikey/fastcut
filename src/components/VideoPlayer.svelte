@@ -621,7 +621,7 @@
             // 時間軸 - Text
             const textClip = createTextClip(0);            
             textClip.text = "✨FastVideoCutter.com";
-            textClip.duration = 3;
+            textClip.duration = 3.2;
             textClip.fontSize = 28;      // 🔥 縮小字體 (原本 40)
             textClip.x = 80;             // 🔥 移到右邊 (0-100%)
             textClip.y = 85;             // 🔥 移到底部 (0-100%)
