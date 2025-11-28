@@ -1,0 +1,100 @@
+---
+import MarketingLayout from '../layouts/MarketingLayout.astro';
+
+const features = [
+  {
+    title: "Universal Compatibility",
+    desc: "Convert iPhone MOV (QuickTime) videos to MP4 (H.264), making them playable on Windows, Android, and older TVs.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>`
+  },
+  {
+    title: "Privacy First",
+    desc: "Unlike other converters, we don't upload your files to a server. Conversion happens locally on your device.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>`
+  },
+  {
+    title: "Edit Before Convert",
+    desc: "Why just convert? You can also trim, crop, or add text to your MOV video before saving it as MP4.",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-400"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>`
+  }
+];
+---
+
+<MarketingLayout
+  title="Convert MOV to MP4 Online - Free & No Upload | FastVideoCutter"
+  heroBadge="Video Converter"
+  heroTitle='Convert MOV to MP4 <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500">Securely</span>'
+  heroSubtitle="The safest way to convert iPhone MOV videos to MP4 format. No file upload required. Works directly in your browser."
+  features={features}
+>
+
+  <!-- SEO 內容區 -->
+  <div class="space-y-12">
+    
+    <!-- Introduction -->
+    <div class="text-center max-w-3xl mx-auto">
+      <h2 class="text-3xl font-bold text-white mb-4">Why convert MOV to MP4?</h2>
+      <p class="text-gray-400 leading-relaxed">
+        MOV files (Apple QuickTime) often struggle to play on Windows or Android devices. 
+        <strong>MP4 (H.264)</strong> is the most compatible video format in the world. 
+        Use <strong>FastVideoCutter</strong> to fix compatibility issues instantly without risking your privacy.
+      </p>
+    </div>
+
+    <!-- How-to Guide -->
+    <section class="space-y-6">
+        <h2 class="text-2xl font-bold text-white">How to convert MOV to MP4 online?</h2>
+        <ol class="space-y-4">
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">1</span>
+                <p class="pt-1 text-slate-300">Click <strong>"Start Editing"</strong> to launch the converter tool.</p>
+            </li>
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">2</span>
+                <p class="pt-1 text-slate-300">Drag and drop your <strong>.MOV</strong> file into the editor.</p>
+            </li>
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">3</span>
+                <p class="pt-1 text-slate-300">Drag the video to the <strong>Main Track</strong>. You can trim it if needed.</p>
+            </li>
+            <li class="flex gap-4 items-start">
+                <span class="flex-shrink-0 w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-cyan-400 font-bold border border-slate-700">4</span>
+                <p class="pt-1 text-slate-300">Click <strong>Export</strong>. The tool will automatically re-encode your video to a standard <strong>MP4</strong> file.</p>
+            </li>
+        </ol>
+    </section>
+
+    <!-- FAQ / Comparison -->
+    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-8 mt-12">
+        <h3 class="text-xl font-bold text-white mb-4">Why choose Client-side Conversion?</h3>
+        <div class="grid md:grid-cols-2 gap-8">
+            <div>
+                <h4 class="text-white font-semibold mb-2 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    Traditional Converters
+                </h4>
+                <p class="text-slate-400 text-sm">
+                    • You upload files (Slow!)<br>
+                    • Server processes video (Waiting...)<br>
+                    • You download files (Slow again)<br>
+                    • <strong>Risk:</strong> Your video is on their server.
+                </p>
+            </div>
+            <div>
+                <h4 class="text-white font-semibold mb-2 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                    FastVideoCutter
+                </h4>
+                <p class="text-slate-400 text-sm">
+                    • No upload required (Instant)<br>
+                    • Your computer processes it (Fast)<br>
+                    • Direct save to disk<br>
+                    • <strong>Safe:</strong> Files never leave your device.
+                </p>
+            </div>
+        </div>
+    </div>
+
+  </div>
+
+</MarketingLayout>
