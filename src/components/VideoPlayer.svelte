@@ -30,6 +30,7 @@
     $: hasClips = contentDuration > 0;
     $: previewRatio = (containerWidth && $projectSettings?.width) ? (containerWidth / $projectSettings.width) : 1;
   
+    // 監聽導出觸發
     $: if ($startExportTrigger > 0 && !$isExporting && hasClips) {
         fastExportProcess();
     }
@@ -112,15 +113,28 @@
             audioTrackClips.update(clips => [audioClip]);
 
             const textClip = createTextClip(0);
-            textClip.text = "Welcome to FastVideoCutter";
+            textClip.text = "✨FastVideoCutter";
             textClip.duration = 5;
             textClip.fontSize = 28;
-            textClip.x = 80;
+            textClip.x = 90;
             textClip.y = 85;
             textClip.color = '#ffffff';
             textClip.showBackground = true;
-            textClip.backgroundColor = '#0ea5e9cc';
+            textClip.backgroundColor = '#00000080';
             textTrackClips.update(clips => [textClip]);
+
+            // 🔥🔥🔥 修復：發送 Sample 通知 🔥🔥🔥
+            if (typeof window !== 'undefined') {
+                fetch('/api/discord', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: 'sample',
+                        filename: 'Demo Project',
+                        duration: '10'
+                    })
+                }).catch(e => console.warn("Sample webhook failed", e));
+            }
 
         } catch (e) {
             console.error("Load sample failed:", e);
@@ -449,6 +463,18 @@
         } catch (err) {
             console.error(err);
             alert(`Export Failed: ${err.message}`);
+              // 🔥 新增：發送錯誤報告到 Discord
+              if (typeof window !== 'undefined') {
+                fetch('/api/discord', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        type: 'error', // 記得去 API 支援這個 type (紅色)
+                        filename: activeClip?.name || "Unknown",
+                        errorMessage: err.message
+                    })
+                }).catch(e => console.warn("Error webhook failed"));
+            }
             isExporting.set(false);
             startExportTrigger.set(0);
         }
@@ -500,7 +526,7 @@
     $: activeAudioClip = $audioTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
     $: activeTextClip = $textTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
 
-    // Sync Video
+    // 1. Sync Video / Image
     $: if (!$isExporting && !isSourceMode) {
         if (activeClip) {
             if (activeClip.type.startsWith('video')) {
@@ -521,7 +547,7 @@
         }
     }
 
-    // Sync Audio
+    // 2. Sync Audio
     $: if (!$isExporting && !isSourceMode) {
         if (activeAudioClip && audioRef) {
             if (!audioRef.src.includes(activeAudioClip.fileUrl)) audioRef.src = activeAudioClip.fileUrl;
@@ -535,7 +561,7 @@
         }
     }
 
-    // Source Preview Mode
+    // 3. Source Preview Mode
     $: if (isSourceMode && !$isExporting) {
         const src = $currentVideoSource;
         if (src.type.startsWith('video')) {
@@ -554,19 +580,20 @@
         }
     }
 
-    // Play/Pause Control
+    // 4. Play/Pause Control
     $: if (!$isExporting) {
         if ($isPlaying && !isSourceMode) {
             if (videoRef && activeClip && activeClip.type.startsWith('video')) videoRef.play().catch(() => {});
             if (audioRef && activeAudioClip) audioRef.play().catch(() => {});
         } else if (isSourceMode) {
+            // Source mode auto-plays
         } else {
             if (videoRef) videoRef.pause();
             if (audioRef) audioRef.pause();
         }
     }
 
-    // Loop Logic
+    // 5. Loop Logic
     $: if ($isPlaying && !$isExporting && !isSourceMode) {
         lastTime = performance.now();
         requestAnimationFrame(loop);
@@ -629,26 +656,74 @@
         on:click={togglePlay}
         bind:clientWidth={containerWidth}
     >
-        <video bind:this={videoRef} class="max-w-full max-h-full object-contain pointer-events-none {(isSourceMode && $currentVideoSource.type.startsWith('video')) || (!isSourceMode && activeClip && activeClip.type.startsWith('video')) ? 'block' : 'hidden'}" style={!isSourceMode && activeClip ? `transform: translate(${(activeClip.positionX || 0) * previewRatio}px, ${(activeClip.positionY || 0) * previewRatio}px) scale(${activeClip.scale || 1}); transform-origin: center;` : ''} muted={false} crossorigin="anonymous"></video>
-        <img bind:this={imageRef} class="max-w-full max-h-full object-contain pointer-events-none {(isSourceMode && $currentVideoSource.type.startsWith('image')) || (!isSourceMode && activeClip && activeClip.type.startsWith('image')) ? 'block' : 'hidden'}" style={!isSourceMode && activeClip ? `transform: translate(${(activeClip.positionX || 0) * previewRatio}px, ${(activeClip.positionY || 0) * previewRatio}px) scale(${activeClip.scale || 1}); transform-origin: center;` : ''} alt="preview" />
-        
+        <!-- Video Element -->
+        <video 
+            bind:this={videoRef} 
+            class="max-w-full max-h-full object-contain pointer-events-none 
+                   {(isSourceMode && $currentVideoSource.type.startsWith('video')) || (!isSourceMode && activeClip && activeClip.type.startsWith('video')) ? 'block' : 'hidden'}" 
+            style={!isSourceMode && activeClip ? `transform: translate(${(activeClip.positionX || 0) * previewRatio}px, ${(activeClip.positionY || 0) * previewRatio}px) scale(${activeClip.scale || 1}); transform-origin: center;` : ''}
+            muted={false} 
+            crossorigin="anonymous"
+        ></video>
+
+        <!-- Image Element -->
+        <img 
+            bind:this={imageRef}
+            class="max-w-full max-h-full object-contain pointer-events-none 
+                   {(isSourceMode && $currentVideoSource.type.startsWith('image')) || (!isSourceMode && activeClip && activeClip.type.startsWith('image')) ? 'block' : 'hidden'}"
+            style={!isSourceMode && activeClip ? `transform: translate(${(activeClip.positionX || 0) * previewRatio}px, ${(activeClip.positionY || 0) * previewRatio}px) scale(${activeClip.scale || 1}); transform-origin: center;` : ''}
+            alt="preview"
+        />
+
+        <!-- Audio Placeholder -->
         {#if isSourceMode && $currentVideoSource.type.startsWith('audio')}
             <div class="flex flex-col items-center gap-4 text-green-400 animate-pulse"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg><span class="text-sm font-mono">Previewing Audio...</span></div>
         {/if}
         
+        <!-- Text Layer -->
         {#if !isSourceMode && activeTextClip}
-            <div class="absolute pointer-events-none text-center select-none" style="top: {activeTextClip.y}%; left: {activeTextClip.x}%; transform: translate(-50%, -50%); font-size: {activeTextClip.fontSize * previewRatio}px; color: {activeTextClip.color}; font-family: {activeTextClip.fontFamily || 'Arial, sans-serif'}; font-weight: {activeTextClip.fontWeight || 'bold'}; white-space: pre-wrap; paint-order: stroke fill; -webkit-text-stroke: {activeTextClip.strokeWidth * previewRatio}px {activeTextClip.strokeColor}; background-color: {activeTextClip.showBackground ? activeTextClip.backgroundColor : 'transparent'}; padding: {activeTextClip.showBackground ? `${10 * previewRatio}px ${20 * previewRatio}px` : '0'}; border-radius: {8 * previewRatio}px;">{activeTextClip.text}</div>
+            <div 
+                class="absolute pointer-events-none text-center select-none"
+                style="
+                    top: {activeTextClip.y}%; 
+                    left: {activeTextClip.x}%; 
+                    transform: translate(-50%, -50%);
+                    font-size: {activeTextClip.fontSize * previewRatio}px;
+                    color: {activeTextClip.color};
+                    font-family: {activeTextClip.fontFamily || 'Arial, sans-serif'};
+                    font-weight: {activeTextClip.fontWeight || 'bold'};
+                    white-space: pre-wrap;
+                    paint-order: stroke fill;
+                    -webkit-text-stroke: {activeTextClip.strokeWidth * previewRatio}px {activeTextClip.strokeColor};
+                    background-color: {activeTextClip.showBackground ? activeTextClip.backgroundColor : 'transparent'};
+                    padding: {activeTextClip.showBackground ? `${10 * previewRatio}px ${20 * previewRatio}px` : '0'};
+                    border-radius: {8 * previewRatio}px;
+                "
+            >
+                {activeTextClip.text}
+            </div>
         {/if}
 
+        <!-- Overlays -->
         {#if isSourceMode}
              <div class="absolute top-4 left-4 z-20">
-                <button class="bg-black/60 hover:bg-red-600/90 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-all backdrop-blur-md shadow-lg cursor-pointer pointer-events-auto text-xs font-bold border border-white/10 hover:border-red-500/50" title="Close Preview & Back to Timeline" on:click|stopPropagation={() => currentVideoSource.set(null)}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg><span>Exit Preview</span>
+                <button 
+                    class="bg-black/60 hover:bg-red-600/90 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-all backdrop-blur-md shadow-lg cursor-pointer pointer-events-auto text-xs font-bold border border-white/10 hover:border-red-500/50"
+                    title="Close Preview & Back to Timeline"
+                    on:click|stopPropagation={() => currentVideoSource.set(null)}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <span>Exit Preview</span>
                 </button>
              </div>
+
              <div class="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
-                <button class="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold text-sm transition-all shadow-lg shadow-cyan-500/30 flex items-center gap-2 border border-cyan-400/50 hover:scale-105 pointer-events-auto" on:click|stopPropagation={addToProject}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>Add to Timeline
+                <button 
+                    class="bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 rounded-full font-bold text-sm transition-all shadow-lg shadow-cyan-500/30 flex items-center gap-2 border border-cyan-400/50 hover:scale-105 pointer-events-auto"
+                    on:click|stopPropagation={addToProject}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Add to Timeline
                 </button>
              </div>
         {/if}

@@ -32,7 +32,11 @@ export const POST = async (context) => {
             break;
         case 'visit':
             title = "👀 New Visitor";
-            color = 9807270; // 灰色
+            color = 9807270; // 灰`色
+            break;
+        case 'error':
+            title = "error";
+            color = 15158332; // 灰色
             break;
     }
 
