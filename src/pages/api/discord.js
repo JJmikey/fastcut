@@ -10,7 +10,7 @@ export const POST = async (context) => {
     }
 
     const data = await request.json();
-    const type = data.type; // 'export', 'import', 'sample', 'visit'
+    const type = data.type; // 'export', 'import', 'sample', 'visit', 'feedback'
 
     // 🔥 定義不同事件的樣式
     let title = "New Activity";
@@ -22,6 +22,10 @@ export const POST = async (context) => {
             title = "🚀 New Video Exported!";
             color = 5814783; // 綠色 (Green)
             break;
+        case 'export_start':
+            title = "⏳ Export Started..."; 
+            color = 16776960; // 黃色
+            break;
         case 'import':
             title = "📂 User Imported Media";
             color = 3901635; // 藍色 (Blue)
@@ -32,26 +36,41 @@ export const POST = async (context) => {
             break;
         case 'visit':
             title = "👀 New Visitor";
-            color = 9807270; // 灰`色
+            color = 9807270; // 灰色
+            break;
+        case 'feedback': // 🔥 新增：用戶反饋
+            title = "📩 New User Feedback";
+            color = 3891958; // 深天藍色
             break;
         case 'error':
-            title = "error";
-            color = 15158332; // 灰色
+            title = "🚨 Error";
+            color = 15158332; // 紅色
             break;
-         // 🔥 新增：開始導出
-         case 'export_start':
-          title = "⏳ Export Started..."; // 進行中 (黃色)
-          color = 16776960; 
-          break;
     }
 
     // 構建 Fields
     const fields = [];
     
+    // 原有的邏輯 (針對媒體操作)
     if (data.filename) fields.push({ name: "File", value: data.filename, inline: true });
     if (data.fileCount) fields.push({ name: "Count", value: `${data.fileCount} files`, inline: true });
     if (data.duration) fields.push({ name: "Duration", value: `${data.duration}s`, inline: true });
     
+    // 🔥 新增：針對 Feedback 的邏輯
+    if (type === 'feedback') {
+        fields.push({ 
+            name: "User Contact", 
+            value: data.contact ? data.contact : "Anonymous", 
+            inline: false 
+        });
+        fields.push({ 
+            name: "Message", 
+            value: data.message || "No content", 
+            inline: false 
+        });
+    }
+
+    // 加上時間戳記
     fields.push({ name: "Time", value: new Date().toLocaleString(), inline: false });
 
     const payload = {

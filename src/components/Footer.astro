@@ -1,4 +1,5 @@
 ---
+import ContactModal from './ContactModal.svelte'; // <--- 1. 引入組件
 const currentYear = new Date().getFullYear();
 ---
 
@@ -31,7 +32,23 @@ const currentYear = new Date().getFullYear();
       <div>
            <h4 class="text-white font-bold mb-4">Legal & Help</h4>
            <ul class="space-y-2">
-             <li><a href="#" class="hover:text-cyan-400 transition-colors">Privacy Policy</a></li>
+             <li><a href="privacy#" class="hover:text-cyan-400 transition-colors">Privacy Policy</a></li>
+
+              <!-- 
+                 🔥 2. 新增 Contact Us 按鈕 
+                 我們傳入 triggerClass 讓它看起來像普通連結，
+                 並在裡面寫上 "Contact Us"
+             -->
+             <li>
+                <ContactModal 
+                    client:load 
+                    triggerClass="hover:text-cyan-400 transition-colors bg-transparent border-0 p-0 cursor-pointer text-left"
+                >
+                    Contact Us
+                </ContactModal>
+             </li>
+
+
             
            </ul>
       </div>

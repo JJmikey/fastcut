@@ -1,0 +1,119 @@
+---
+// src/pages/privacy.astro
+import Layout from '../layouts/Layout.astro';
+import Footer from '../components/Footer.astro';
+import ContactModal from '../components/ContactModal.svelte'; // <--- 新增這一行
+
+// 設定 SEO 資訊
+const title = "Privacy Policy - Fast Video Cutter";
+---
+
+<Layout title={title}>
+  <div class="bg-[#020617] min-h-screen text-slate-300 font-sans selection:bg-cyan-500 selection:text-white flex flex-col">
+    
+    <!-- 1. 導航欄 (直接沿用 MarketingLayout 的設計，保持一致性) -->
+    <nav class="sticky top-0 w-full z-50 border-b border-slate-800/60 bg-[#020617]/80 backdrop-blur-md">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <a href="/" class="flex items-center gap-2 cursor-pointer group">
+            <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
+              <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-5 h-5">
+                <rect width="512" height="512" rx="128" fill="url(#brand_gradient)"/>
+                <g transform="translate(96, 96) scale(13)">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="white" stroke="white" stroke-width="2" stroke-linejoin="round"/>
+                </g>
+                <defs>
+                  <linearGradient id="brand_gradient" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#3B82F6"/>
+                    <stop offset="1" stop-color="#22D3EE"/>
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <span class="text-white font-bold text-xl tracking-tight">FastVideoCutter</span>
+          </a>
+          <!-- 簡單的返回首頁連結 -->
+          <div class="flex items-center space-x-4">
+            <a href="/" class="text-sm font-medium hover:text-white transition-colors">Home</a>
+            <a href="/editor" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-full font-bold text-xs transition-all border border-slate-700">
+              Open Editor
+            </a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- 2. Privacy Policy 內容區塊 -->
+    <main class="flex-grow pt-12 pb-24 px-4 sm:px-6">
+      <div class="max-w-3xl mx-auto">
+        
+        <!-- 標題區 -->
+        <div class="text-center mb-16">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-white mb-4">Privacy Policy</h1>
+            <p class="text-slate-400">Last updated: November 30, 2025</p>
+        </div>
+
+        <!-- 文章內容 (使用 prose-invert 完美適配深色模式) -->
+        <article class="prose prose-invert prose-lg prose-slate mx-auto">
+            
+            <section class="mb-12">
+                <div class="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-6 not-prose">
+                    <h3 class="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                        <span class="text-2xl">🛡️</span> The Short Version
+                    </h3>
+                    <p class="text-blue-200 mb-0">
+                        <strong>Fast Video Cutter works entirely in your browser.</strong> Your video files are processed locally on your device (using WebCodecs) and are <strong>never uploaded</strong> to our servers. We cannot see, copy, or steal your content.
+                    </p>
+                </div>
+            </section>
+
+            <h3>1. Local Processing Promise</h3>
+            <p>
+                Unlike traditional online video editors, Fast Video Cutter is a <strong>client-side application</strong>. When you "upload" a file, it simply moves into your browser's temporary memory. All editing operations (trimming, merging, adding audio) happen on your CPU. No video data ever leaves your computer.
+            </p>
+
+            <h3>2. Data Collection</h3>
+            <p>
+                While we do not collect your files, we collect minimal anonymous data to ensure the tool works correctly:
+            </p>
+            <ul>
+                <li><strong>Website Analytics:</strong> We use privacy-friendly analytics (via Cloudflare) to count visitors and page views.</li>
+                <li><strong>Error & Usage Logs:</strong> When an export finishes (or fails), our system sends an automated notification (via Discord Webhook) containing technical metadata, such as:
+                    <ul>
+                        <li>File extension (e.g., .mp3, .mp4)</li>
+                        <li>Duration of the clip</li>
+                        <li>Processing time</li>
+                    </ul>
+                </li>
+            </ul>
+            <p class="text-sm text-slate-400">
+                <em>Note: We deliberately do not store or transmit the actual content of your files.</em>
+            </p>
+
+            <h3>3. Cookies & Local Storage</h3>
+            <p>
+                We do not use cookies for advertising tracking. We utilize your browser's <strong>Local Storage</strong> to save your preferences (such as dark mode settings) so you don't have to reset them every time you visit.
+            </p>
+
+            <h3>4. Third-Party Services</h3>
+            <p>
+                This website is hosted on <strong>Cloudflare</strong>, which ensures fast global access and security (DDoS protection). Cloudflare may process your IP address strictly for security and operational purposes.
+            </p>
+
+            <h3>5. Contact</h3>
+            <p>
+                 If you have questions about this policy, please reach out via our community channels or click 
+                <ContactModal client:load /> 
+                to send us a message directly.
+            </p>
+
+        </article>
+
+      </div>
+    </main>
+
+    <!-- 3. Footer -->
+    <Footer />
+
+  </div>
+</Layout>
