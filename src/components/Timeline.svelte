@@ -12,6 +12,13 @@
     // --- 狀態變數 ---
     let totalDuration = 60;     
     
+    // --- Auto Scroll 變數 (新增) ---
+    let autoScrollSpeed = 0;
+    let animationFrameId = null;
+    let lastMouseEvent = null;
+    let initialScrollLeft = 0; // 用於修正捲動時的位移計算
+    let isScrubbing = false;   // 標記是否正在拖曳指針
+
     // Resize 變數
     let resizingClipId = null;  
     let resizingTrack = null; 
@@ -58,7 +65,7 @@
     function switchToTimeline() { currentVideoSource.set(null); }
     function handleDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }
 
-    // --- Drop Logic (Main Track) ---
+    // --- Drop Logic ---
     function handleDrop(e) {
         e.preventDefault();
         switchToTimeline();
@@ -66,33 +73,22 @@
         if (data) {
             const fileData = JSON.parse(data);
             if (fileData.type.startsWith('audio')) { alert("Audio -> Audio Track"); return; }
-            
             const actualFileObject = get(draggedFile); 
             const currentMaxTime = $mainTrackClips.length > 0 ? Math.max(...$mainTrackClips.map(c => c.startOffset + c.duration)) : 0;
             const originalDuration = fileData.duration || 5;
             const isImage = fileData.type.startsWith('image'); 
 
             const newClip = { 
-                id: generateId(), 
-                fileUrl: fileData.url, 
-                name: fileData.name, 
-                type: fileData.type, 
-                startOffset: currentMaxTime, 
-                duration: originalDuration, 
-                sourceDuration: isImage ? Infinity : originalDuration,
-                mediaStartOffset: 0,
-                volume: 1.0,
-                file: actualFileObject ? actualFileObject.file : null,
-                thumbnails: actualFileObject ? actualFileObject.thumbnails : [],
-                thumbnailUrls: fileData.thumbnailUrls || []
+                id: generateId(), fileUrl: fileData.url, name: fileData.name, type: fileData.type, 
+                startOffset: currentMaxTime, duration: originalDuration, sourceDuration: isImage ? Infinity : originalDuration,
+                mediaStartOffset: 0, volume: 1.0, file: actualFileObject ? actualFileObject.file : null,
+                thumbnails: actualFileObject ? actualFileObject.thumbnails : [], thumbnailUrls: fileData.thumbnailUrls || []
             };
-            
             mainTrackClips.update(clips => resolveOverlaps([...clips, newClip], newClip.id));
             draggedFile.set(null); 
         }
     }
 
-    // --- Drop Logic (Audio Track) ---
     function handleAudioDrop(e) {
         e.preventDefault();
         switchToTimeline();
@@ -100,29 +96,68 @@
         if (data) {
             const fileData = JSON.parse(data);
             if (!fileData.type.startsWith('audio')) { alert("Video -> Main Track"); return; }
-            
             const actualFileObject = get(draggedFile);
             const currentMaxTime = $audioTrackClips.length > 0 ? Math.max(...$audioTrackClips.map(c => c.startOffset + c.duration)) : 0;
             const originalDuration = fileData.duration || 5;
-            
             const newClip = { 
-                id: generateId(), 
-                fileUrl: fileData.url, 
-                name: fileData.name, 
-                type: fileData.type, 
-                startOffset: currentMaxTime, 
-                duration: originalDuration, 
-                sourceDuration: originalDuration, 
-                mediaStartOffset: 0, 
-                volume: 1.0, 
-                file: actualFileObject ? actualFileObject.file : null,
-                // 🔥 接收波形
+                id: generateId(), fileUrl: fileData.url, name: fileData.name, type: fileData.type, 
+                startOffset: currentMaxTime, duration: originalDuration, sourceDuration: originalDuration, 
+                mediaStartOffset: 0, volume: 1.0, file: actualFileObject ? actualFileObject.file : null,
                 waveform: fileData.waveform || (actualFileObject ? actualFileObject.waveform : null)
             };
-            
             audioTrackClips.update(clips => resolveOverlaps([...clips, newClip], newClip.id));
             draggedFile.set(null);
         }
+    }
+
+    // --- Auto Scroll Logic (新增) ---
+    function checkAutoScroll(currentX) {
+        if (!scrollContainer) return;
+        const { left, right } = scrollContainer.getBoundingClientRect();
+        const edgeThreshold = 50; // 邊緣熱區大小 (px)
+        const maxSpeed = 15; // 最大捲動速度
+
+        if (currentX < left + edgeThreshold) {
+            // 向左捲動 (根據距離計算強度 0~1)
+            const intensity = Math.min(1, (left + edgeThreshold - currentX) / edgeThreshold);
+            autoScrollSpeed = -maxSpeed * intensity;
+        } else if (currentX > right - edgeThreshold) {
+            // 向右捲動
+            const intensity = Math.min(1, (currentX - (right - edgeThreshold)) / edgeThreshold);
+            autoScrollSpeed = maxSpeed * intensity;
+        } else {
+            autoScrollSpeed = 0;
+        }
+    }
+
+    function performAutoScroll() {
+        if (autoScrollSpeed !== 0 && scrollContainer) {
+            scrollContainer.scrollLeft += autoScrollSpeed;
+            
+            // 重要：捲動時，即使滑鼠不動，邏輯上的位置也變了，需要重新觸發 Handler
+            if (lastMouseEvent) {
+                if (resizingClipId) handleResizeMove(lastMouseEvent);
+                else if (movingClipId) handleMoveClip(lastMouseEvent);
+                else if (isSelecting) handleMarqueeMove(lastMouseEvent);
+                else if (isScrubbing) handleTimelineMouseMove(lastMouseEvent); // 指針拖曳
+            }
+        }
+        animationFrameId = requestAnimationFrame(performAutoScroll);
+    }
+
+    function startAutoScrollLoop() {
+        if (!animationFrameId) {
+            performAutoScroll();
+        }
+    }
+
+    function stopAutoScrollLoop() {
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+        autoScrollSpeed = 0;
+        lastMouseEvent = null;
     }
 
     // --- Split & Delete ---
@@ -145,14 +180,12 @@
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); handleSplit(); }
     }
     function handleContextMenu(e, clipId) { 
-        e.preventDefault(); 
-        switchToTimeline(); 
+        e.preventDefault(); switchToTimeline(); 
         if (!$selectedClipIds.includes(clipId)) selectedClipIds.set([clipId]); 
         deleteSelected(); 
     }
     function selectClip(e, clipId) { 
-        e.stopPropagation(); 
-        switchToTimeline();
+        e.stopPropagation(); switchToTimeline();
         if (e.shiftKey) {
             selectedClipIds.update(ids => ids.includes(clipId) ? ids.filter(id => id !== clipId) : [...ids, clipId]);
         } else {
@@ -160,7 +193,7 @@
         }
     }
 
-    // --- Resize Logic ---
+    // --- Resize Logic (Updated) ---
     function startResize(e, clip, trackType, edge) {
         e.stopPropagation();
         switchToTimeline();
@@ -168,21 +201,32 @@
         resizingClipId = clip.id;
         resizingTrack = trackType;
         resizingEdge = edge; 
+        
         initialX = e.clientX;
+        initialScrollLeft = scrollContainer.scrollLeft; // 記錄初始捲動位置
+        
         initialDuration = clip.duration;
         initialStartOffset = clip.startOffset;
         initialMediaStart = clip.mediaStartOffset || 0;
         maxDurationLimit = clip.sourceDuration === undefined ? Infinity : clip.sourceDuration;
         
         showGuide = true;
+        startAutoScrollLoop(); // 啟動
         window.addEventListener('mousemove', handleResizeMove);
         window.addEventListener('mouseup', stopResize);
     }
 
     function handleResizeMove(e) {
         if (!resizingClipId) return;
-        const deltaX = e.clientX - initialX;
-        const deltaSeconds = deltaX / pixelsPerSecond; 
+        lastMouseEvent = e;
+        checkAutoScroll(e.clientX); // 檢查是否需要捲動
+
+        // 計算位移：包含滑鼠移動 + 捲動造成的位移
+        const mouseDelta = e.clientX - initialX;
+        const scrollDelta = scrollContainer.scrollLeft - initialScrollLeft;
+        const totalDeltaX = mouseDelta + scrollDelta;
+
+        const deltaSeconds = totalDeltaX / pixelsPerSecond; 
         
         let newDuration = initialDuration;
         let newStartOffset = initialStartOffset;
@@ -227,7 +271,7 @@
         else if (resizingTrack === 'audio') audioTrackClips.update(updateLogic);
         else if (resizingTrack === 'text') textTrackClips.update(updateLogic);
 
-        guideX = e.clientX;
+        guideX = e.clientX; // Guide 跟隨滑鼠，不用管捲動
         const currentEdgeTime = resizingEdge === 'end' ? (newStartOffset + newDuration) : newStartOffset;
         const isSnapped = Math.abs(currentEdgeTime - $currentTime) < 0.001;
         guideTimeText = (isSnapped ? "🧲 " : "") + `${currentEdgeTime.toFixed(2)}s`;
@@ -235,11 +279,12 @@
 
     function stopResize() {
         resizingClipId = null; resizingTrack = null; resizingEdge = null; showGuide = false;
+        stopAutoScrollLoop(); // 停止
         window.removeEventListener('mousemove', handleResizeMove);
         window.removeEventListener('mouseup', stopResize);
     }
 
-    // --- Move Logic ---
+    // --- Move Logic (Updated) ---
     function startMoveClip(e, clip, trackType) {
         e.stopPropagation();
         switchToTimeline();
@@ -249,7 +294,10 @@
 
         movingClipId = clip.id;
         movingTrack = trackType;
+        
         moveInitialX = e.clientX;
+        initialScrollLeft = scrollContainer.scrollLeft; // 記錄初始捲動位置
+        
         moveInitialStart = clip.startOffset;
 
         groupInitialOffsets = {};
@@ -260,14 +308,22 @@
         });
 
         showGuide = true;
+        startAutoScrollLoop(); // 啟動
         window.addEventListener('mousemove', handleMoveClip);
         window.addEventListener('mouseup', stopMoveClip);
     }
 
     function handleMoveClip(e) {
         if (!movingClipId) return;
-        const deltaX = e.clientX - moveInitialX;
-        const deltaSeconds = deltaX / pixelsPerSecond;
+        lastMouseEvent = e;
+        checkAutoScroll(e.clientX);
+
+        // 計算位移：包含滑鼠移動 + 捲動造成的位移
+        const mouseDelta = e.clientX - moveInitialX;
+        const scrollDelta = scrollContainer.scrollLeft - initialScrollLeft;
+        const totalDeltaX = mouseDelta + scrollDelta;
+
+        const deltaSeconds = totalDeltaX / pixelsPerSecond;
         
         const updateBatch = (clips) => clips.map(c => {
             if ($selectedClipIds.includes(c.id) && groupInitialOffsets[c.id] !== undefined) {
@@ -294,11 +350,12 @@
         else if (movingTrack === 'text') textTrackClips.update(clips => resolveOverlaps(clips, currentId));
 
         movingClipId = null; movingTrack = null; showGuide = false; groupInitialOffsets = {};
+        stopAutoScrollLoop(); // 停止
         window.removeEventListener('mousemove', handleMoveClip);
         window.removeEventListener('mouseup', stopMoveClip);
     }
 
-    // --- Marquee Logic ---
+    // --- Marquee Logic (Updated) ---
     function handleTimelineMouseDown(e) {
         switchToTimeline();
         if (e.target.classList.contains('track-bg')) {
@@ -306,7 +363,10 @@
             startMarquee(e);
         } else {
             if (!e.shiftKey) selectedClipIds.set([]);
+            // 指針拖曳開始 (Scrubbing)
+            isScrubbing = true;
             updateTimeFromEvent(e);
+            startAutoScrollLoop(); // 啟動
             window.addEventListener('mousemove', handleTimelineMouseMove);
             window.addEventListener('mouseup', handleTimelineMouseUp);
         }
@@ -316,17 +376,24 @@
         isSelecting = true;
         if (!scrollContainer) return;
         const rect = scrollContainer.getBoundingClientRect();
+        // Marquee 的計算是相對 scrollContainer 內容的，所以直接用 scrollLeft 就好，不用額外修正 delta
         const startX = e.clientX - rect.left + scrollContainer.scrollLeft;
         const startY = e.clientY - rect.top + scrollContainer.scrollTop;
         selectStartX = startX; selectStartY = startY;
         selectBox = { x: startX, y: startY, width: 0, height: 0 };
+        
+        startAutoScrollLoop(); // 啟動
         window.addEventListener('mousemove', handleMarqueeMove);
         window.addEventListener('mouseup', stopMarquee);
     }
 
     function handleMarqueeMove(e) {
         if (!isSelecting || !scrollContainer) return;
+        lastMouseEvent = e;
+        checkAutoScroll(e.clientX);
+
         const rect = scrollContainer.getBoundingClientRect();
+        // 這裡因為直接讀取最新的 scrollLeft，所以不需要像 MoveClip 那樣計算 Delta，自動就會跟隨捲動
         const currentX = e.clientX - rect.left + scrollContainer.scrollLeft;
         const currentY = e.clientY - rect.top + scrollContainer.scrollTop;
         const x = Math.min(selectStartX, currentX);
@@ -343,92 +410,90 @@
         const isYOverlap = (track) => boxTop < track.bottom && boxBottom > track.top;
 
         const newSelected = [];
-        if (isYOverlap(TRACK_BOUNDS.text)) {
-            $textTrackClips.forEach(clip => {
+        // (省略重複的選取邏輯，保持原樣)
+        const checkTrack = (trackClips) => {
+             trackClips.forEach(clip => {
                 if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
             });
-        }
-        if (isYOverlap(TRACK_BOUNDS.main)) {
-            $mainTrackClips.forEach(clip => {
-                if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
-            });
-        }
-        if (isYOverlap(TRACK_BOUNDS.audio)) {
-            $audioTrackClips.forEach(clip => {
-                if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
-            });
-        }
+        };
+        if (isYOverlap(TRACK_BOUNDS.text)) checkTrack($textTrackClips);
+        if (isYOverlap(TRACK_BOUNDS.main)) checkTrack($mainTrackClips);
+        if (isYOverlap(TRACK_BOUNDS.audio)) checkTrack($audioTrackClips);
+        
         selectedClipIds.set(newSelected);
     }
 
     function stopMarquee() {
         isSelecting = false;
         selectBox = { x: 0, y: 0, width: 0, height: 0 };
+        stopAutoScrollLoop(); // 停止
         window.removeEventListener('mousemove', handleMarqueeMove);
         window.removeEventListener('mouseup', stopMarquee);
     }
 
-    // --- Action: Draw Audio Waveform (Bar Chart Style) ---
+    // --- Timeline Playhead Logic (Updated) ---
+    function handleTimelineMouseMove(e) { 
+        lastMouseEvent = e;
+        checkAutoScroll(e.clientX);
+        updateTimeFromEvent(e); 
+    }
+
+    function handleTimelineMouseUp() { 
+        isScrubbing = false;
+        stopAutoScrollLoop(); // 停止
+        window.removeEventListener('mousemove', handleTimelineMouseMove); 
+        window.removeEventListener('mouseup', handleTimelineMouseUp); 
+    }
+
+    function updateTimeFromEvent(e) {
+        if (!timelineContainer) return;
+        const rect = timelineContainer.getBoundingClientRect();
+        // getBoundingClientRect 取得的是相對視窗的位置
+        // 當 scrollContainer 捲動時，timelineContainer (內容) 會往左移，rect.left 會變小 (變成負數)
+        // 所以 e.clientX - rect.left 自然會算出正確的 timelineX，不需要額外加 scrollLeft
+        const x = e.clientX - rect.left;
+        const timelineX = x - 96; 
+        currentTime.set(Math.max(0, timelineX / pixelsPerSecond));
+    }
+
+    // (Canvas Draw Function 保持不變，省略)
     function drawWaveform(canvas, clip) {
         if (!canvas || !clip.waveform) return;
-        
-        // 確保 Canvas 解析度正確
         const rect = canvas.getBoundingClientRect();
         canvas.width = rect.width;
         canvas.height = rect.height;
-
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
         const data = clip.waveform;
-        
         ctx.clearRect(0, 0, width, height);
-        
-        // 垂直漸變：橘(高) -> 黃 -> 綠(低)
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
         gradient.addColorStop(0, '#fb923c');   
         gradient.addColorStop(0.5, '#facc15'); 
         gradient.addColorStop(1, '#4ade80');   
         ctx.fillStyle = gradient;
-        
-        const barWidth = 4; 
-        const gap = 2;      
-        const step = barWidth + gap;
+        const barWidth = 4; const gap = 2; const step = barWidth + gap;
         const totalBars = Math.floor(width / step);
         const dataStep = data.length / totalBars;
-
         for (let i = 0; i < totalBars; i++) {
             const dataIndex = Math.floor(i * dataStep);
             const value = data[dataIndex] || 0; 
-
             let barHeight = value * height * 0.9;
             if (barHeight < 1) barHeight = 2;
-
-            const x = i * step;
-            const y = height - barHeight; // 底部對齊
-            
+            const x = i * step; const y = height - barHeight;
             ctx.beginPath();
             if (ctx.roundRect) ctx.roundRect(x, y, barWidth, barHeight, [2, 2, 0, 0]);
             else ctx.rect(x, y, barWidth, barHeight);
             ctx.fill();
         }
     }
-
-    function handleTimelineMouseMove(e) { updateTimeFromEvent(e); }
-    function handleTimelineMouseUp() { window.removeEventListener('mousemove', handleTimelineMouseMove); window.removeEventListener('mouseup', handleTimelineMouseUp); }
-    function updateTimeFromEvent(e) {
-        if (!timelineContainer) return;
-        const rect = timelineContainer.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const timelineX = x - 96; 
-        currentTime.set(Math.max(0, timelineX / pixelsPerSecond));
-    }
 </script>
 
 <svelte:window on:keydown={handleKeyDown} />
 
+<!-- HTML 結構保持不變 -->
 <div class="h-[35%] bg-[#181818] border-t border-gray-700 flex flex-col relative select-none overflow-hidden">
-    
+    <!-- Header Controls -->
     <div class="h-8 bg-[#252525] border-b border-gray-700 flex items-center px-4 justify-between z-50 relative">
         <div class="flex items-center gap-2">
             <button on:click={handleSplit} class="text-gray-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-700 transition-colors text-xs" title="Split (Ctrl+B)">
@@ -443,6 +508,7 @@
         </div>
     </div>
 
+    <!-- Scroll Container -->
     <div bind:this={scrollContainer} class="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative">
         <div bind:this={timelineContainer} class="relative h-full flex flex-col min-w-full" style="width: {totalDuration * pixelsPerSecond + 100}px;" on:mousedown={handleTimelineMouseDown}>
 
@@ -477,14 +543,6 @@
                     <div class="w-24 shrink-0 border-r border-gray-700 flex items-center pl-3 text-xs text-gray-400 bg-[#181818] z-30 sticky left-0 h-full">Text</div>
                     <div class="flex-1 bg-[#151515] relative h-full track-bg">
                         {#each $textTrackClips as clip (clip.id)}
-                            <!-- 
-                                🔥 美化 Text Clip：
-                                1. 背景: bg-purple-500/20 (半透明紫色)
-                                2. 邊框: border-purple-400/50 (柔和邊框)
-                                3. 圓角: rounded-lg (更圓潤)
-                                4. 互動: hover:bg-purple-500/30 (滑鼠移上去變亮)
-                                5. 選中狀態: ring-1 ring-purple-300
-                            -->
                             <div 
                                 class="absolute top-2 bottom-2 rounded-lg overflow-hidden border backdrop-blur-sm transition-colors cursor-move 
                                        { $selectedClipIds.includes(clip.id) 
@@ -496,20 +554,14 @@
                                 on:click={(e) => selectClip(e, clip.id)} 
                                 on:contextmenu={(e) => handleContextMenu(e, clip.id)}
                             >
-                                <!-- 內容區 -->
                                 <div class="w-full h-full flex items-center px-2 gap-2 pointer-events-none">
-                                    <!-- Icon -->
                                     <div class="w-4 h-4 rounded bg-purple-500/80 flex items-center justify-center shrink-0 shadow-sm">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14"/><path d="M12 7v14"/></svg>
                                     </div>
-                                    
-                                    <!-- 文字 -->
                                     <span class="text-[11px] text-purple-100 truncate font-medium tracking-wide drop-shadow-md">
                                         {clip.text || 'New Text'}
                                     </span>
                                 </div>
-
-                                <!-- Resize Handles (改為半透明白色，更有質感) -->
                                 <div class="absolute top-0 bottom-0 left-0 w-4 cursor-ew-resize z-50 hover:bg-white/10 transition-colors flex items-center justify-center" on:mousedown={(e) => startResize(e, clip, 'text', 'start')} on:click|stopPropagation><div class="w-[2px] h-3 bg-white/40 rounded-full"></div></div>
                                 <div class="absolute top-0 bottom-0 right-0 w-4 cursor-ew-resize z-50 hover:bg-white/10 transition-colors flex items-center justify-center" on:mousedown={(e) => startResize(e, clip, 'text', 'end')} on:click|stopPropagation><div class="w-[2px] h-3 bg-white/40 rounded-full"></div></div>
                             </div>
@@ -539,10 +591,6 @@
                                     >
                                         {#each clip.thumbnailUrls as url}
                                         <div class="flex-1 h-full min-w-0 border-r border-white/20 last:border-0 overflow-hidden bg-black/50">
-                                            <!-- 
-                                               object-cover: 確保圖片填滿高度，不會變形。
-                                               如果格子被拉很寬，圖片會裁切但不會被壓扁或拉長得太離譜。
-                                            -->
                                             <img src={url} class="w-full h-full object-cover opacity-80" alt="frame" draggable="false" />
                                         </div>
                                         {/each}
@@ -556,7 +604,7 @@
                     </div>
                 </div>
                 
-                <!-- Audio Track (Waveform Updated) -->
+                <!-- Audio Track -->
                 <div class="flex h-16 border-b border-gray-800 relative track-bg" on:dragover={handleDragOver} on:drop={handleAudioDrop}>
                      <div class="w-24 shrink-0 border-r border-gray-700 flex items-center pl-3 text-xs text-gray-400 bg-[#181818] z-30 sticky left-0 h-full">Audio</div>
                     <div class="flex-1 bg-[#151515] relative h-full track-bg">
@@ -569,11 +617,9 @@
                                 on:click={(e) => selectClip(e, clip.id)} 
                                 on:contextmenu={(e) => handleContextMenu(e, clip.id)}
                             >
-                                <!-- Waveform Canvas -->
                                 {#if clip.waveform}
                                     <canvas class="absolute inset-0 w-full h-full pointer-events-none opacity-80" use:drawWaveform={clip}></canvas>
                                 {/if}
-
                                 <div class="w-full h-full flex items-start justify-start pointer-events-none relative z-10 p-1">
                                     <span class="text-[10px] text-white/80 truncate px-1.5 py-0.5 bg-black/30 rounded">🎵 {clip.name}</span>
                                 </div>
