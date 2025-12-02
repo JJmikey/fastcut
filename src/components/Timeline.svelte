@@ -9,15 +9,19 @@
     let timelineContainer; 
     let scrollContainer;
     
+    // --- 視窗與捲動變數 ---
+    let visibleWidth = 0;
+    let currentScrollLeft = 0; // 用於追蹤捲動位置
+
     // --- 狀態變數 ---
     let totalDuration = 60;     
     
-    // --- Auto Scroll 變數 (新增) ---
+    // --- Auto Scroll 變數 ---
     let autoScrollSpeed = 0;
     let animationFrameId = null;
     let lastMouseEvent = null;
-    let initialScrollLeft = 0; // 用於修正捲動時的位移計算
-    let isScrubbing = false;   // 標記是否正在拖曳指針
+    let initialScrollLeft = 0; 
+    let isScrubbing = false;   
 
     // Resize 變數
     let resizingClipId = null;  
@@ -45,7 +49,6 @@
     let guideX = 0;           
     let guideTimeText = "";   
 
-    // 軌道 Y 軸位置 (用於框選)
     const TRACK_Y = { RULER: 24, TEXT: 64, MAIN: 96, AUDIO: 64 };
     const TRACK_BOUNDS = {
         text: { top: TRACK_Y.RULER, bottom: TRACK_Y.RULER + TRACK_Y.TEXT },
@@ -53,13 +56,24 @@
         audio: { top: TRACK_Y.RULER + TRACK_Y.TEXT + TRACK_Y.MAIN, bottom: TRACK_Y.RULER + TRACK_Y.TEXT + TRACK_Y.MAIN + TRACK_Y.AUDIO }
     };
 
-    // --- Reactive: 計算總長度 ---
+    // --- 🔥 修復：手動處理捲動事件 ---
+    function handleScroll(e) {
+        // 當捲動發生時，手動更新變數
+        currentScrollLeft = e.currentTarget.scrollLeft;
+    }
+
+    // --- Reactive: 計算總長度 (無限畫布邏輯) ---
     $: {
         const maxMain = $mainTrackClips.length > 0 ? Math.max(...$mainTrackClips.map(c => c.startOffset + c.duration)) : 0;
         const maxAudio = $audioTrackClips.length > 0 ? Math.max(...$audioTrackClips.map(c => c.startOffset + c.duration)) : 0;
         const maxText = $textTrackClips.length > 0 ? Math.max(...$textTrackClips.map(c => c.startOffset + c.duration)) : 0;
+        
         const maxClipEnd = Math.max(maxMain, maxAudio, maxText);
-        totalDuration = Math.max(60, maxClipEnd + 30);
+        
+        // 使用 currentScrollLeft 計算視窗右邊界
+        const visibleRightEdgeTime = (currentScrollLeft + visibleWidth - 100) / pixelsPerSecond;
+
+        totalDuration = Math.max(60, maxClipEnd + 30, visibleRightEdgeTime + 10);
     }
 
     function switchToTimeline() { currentVideoSource.set(null); }
@@ -110,19 +124,17 @@
         }
     }
 
-    // --- Auto Scroll Logic (新增) ---
+    // --- Auto Scroll Logic ---
     function checkAutoScroll(currentX) {
         if (!scrollContainer) return;
         const { left, right } = scrollContainer.getBoundingClientRect();
-        const edgeThreshold = 50; // 邊緣熱區大小 (px)
-        const maxSpeed = 15; // 最大捲動速度
+        const edgeThreshold = 50; 
+        const maxSpeed = 15; 
 
         if (currentX < left + edgeThreshold) {
-            // 向左捲動 (根據距離計算強度 0~1)
             const intensity = Math.min(1, (left + edgeThreshold - currentX) / edgeThreshold);
             autoScrollSpeed = -maxSpeed * intensity;
         } else if (currentX > right - edgeThreshold) {
-            // 向右捲動
             const intensity = Math.min(1, (currentX - (right - edgeThreshold)) / edgeThreshold);
             autoScrollSpeed = maxSpeed * intensity;
         } else {
@@ -132,14 +144,14 @@
 
     function performAutoScroll() {
         if (autoScrollSpeed !== 0 && scrollContainer) {
+            // 直接修改 scrollLeft，這會觸發 on:scroll 事件，進而更新 currentScrollLeft
             scrollContainer.scrollLeft += autoScrollSpeed;
             
-            // 重要：捲動時，即使滑鼠不動，邏輯上的位置也變了，需要重新觸發 Handler
             if (lastMouseEvent) {
                 if (resizingClipId) handleResizeMove(lastMouseEvent);
                 else if (movingClipId) handleMoveClip(lastMouseEvent);
                 else if (isSelecting) handleMarqueeMove(lastMouseEvent);
-                else if (isScrubbing) handleTimelineMouseMove(lastMouseEvent); // 指針拖曳
+                else if (isScrubbing) handleTimelineMouseMove(lastMouseEvent);
             }
         }
         animationFrameId = requestAnimationFrame(performAutoScroll);
@@ -193,7 +205,7 @@
         }
     }
 
-    // --- Resize Logic (Updated) ---
+    // --- Resize Logic ---
     function startResize(e, clip, trackType, edge) {
         e.stopPropagation();
         switchToTimeline();
@@ -203,7 +215,7 @@
         resizingEdge = edge; 
         
         initialX = e.clientX;
-        initialScrollLeft = scrollContainer.scrollLeft; // 記錄初始捲動位置
+        initialScrollLeft = scrollContainer.scrollLeft; 
         
         initialDuration = clip.duration;
         initialStartOffset = clip.startOffset;
@@ -211,7 +223,7 @@
         maxDurationLimit = clip.sourceDuration === undefined ? Infinity : clip.sourceDuration;
         
         showGuide = true;
-        startAutoScrollLoop(); // 啟動
+        startAutoScrollLoop();
         window.addEventListener('mousemove', handleResizeMove);
         window.addEventListener('mouseup', stopResize);
     }
@@ -219,9 +231,8 @@
     function handleResizeMove(e) {
         if (!resizingClipId) return;
         lastMouseEvent = e;
-        checkAutoScroll(e.clientX); // 檢查是否需要捲動
+        checkAutoScroll(e.clientX);
 
-        // 計算位移：包含滑鼠移動 + 捲動造成的位移
         const mouseDelta = e.clientX - initialX;
         const scrollDelta = scrollContainer.scrollLeft - initialScrollLeft;
         const totalDeltaX = mouseDelta + scrollDelta;
@@ -271,7 +282,7 @@
         else if (resizingTrack === 'audio') audioTrackClips.update(updateLogic);
         else if (resizingTrack === 'text') textTrackClips.update(updateLogic);
 
-        guideX = e.clientX; // Guide 跟隨滑鼠，不用管捲動
+        guideX = e.clientX;
         const currentEdgeTime = resizingEdge === 'end' ? (newStartOffset + newDuration) : newStartOffset;
         const isSnapped = Math.abs(currentEdgeTime - $currentTime) < 0.001;
         guideTimeText = (isSnapped ? "🧲 " : "") + `${currentEdgeTime.toFixed(2)}s`;
@@ -279,12 +290,12 @@
 
     function stopResize() {
         resizingClipId = null; resizingTrack = null; resizingEdge = null; showGuide = false;
-        stopAutoScrollLoop(); // 停止
+        stopAutoScrollLoop();
         window.removeEventListener('mousemove', handleResizeMove);
         window.removeEventListener('mouseup', stopResize);
     }
 
-    // --- Move Logic (Updated) ---
+    // --- Move Logic ---
     function startMoveClip(e, clip, trackType) {
         e.stopPropagation();
         switchToTimeline();
@@ -296,8 +307,7 @@
         movingTrack = trackType;
         
         moveInitialX = e.clientX;
-        initialScrollLeft = scrollContainer.scrollLeft; // 記錄初始捲動位置
-        
+        initialScrollLeft = scrollContainer.scrollLeft; 
         moveInitialStart = clip.startOffset;
 
         groupInitialOffsets = {};
@@ -308,7 +318,7 @@
         });
 
         showGuide = true;
-        startAutoScrollLoop(); // 啟動
+        startAutoScrollLoop();
         window.addEventListener('mousemove', handleMoveClip);
         window.addEventListener('mouseup', stopMoveClip);
     }
@@ -318,7 +328,6 @@
         lastMouseEvent = e;
         checkAutoScroll(e.clientX);
 
-        // 計算位移：包含滑鼠移動 + 捲動造成的位移
         const mouseDelta = e.clientX - moveInitialX;
         const scrollDelta = scrollContainer.scrollLeft - initialScrollLeft;
         const totalDeltaX = mouseDelta + scrollDelta;
@@ -350,12 +359,12 @@
         else if (movingTrack === 'text') textTrackClips.update(clips => resolveOverlaps(clips, currentId));
 
         movingClipId = null; movingTrack = null; showGuide = false; groupInitialOffsets = {};
-        stopAutoScrollLoop(); // 停止
+        stopAutoScrollLoop();
         window.removeEventListener('mousemove', handleMoveClip);
         window.removeEventListener('mouseup', stopMoveClip);
     }
 
-    // --- Marquee Logic (Updated) ---
+    // --- Marquee Logic ---
     function handleTimelineMouseDown(e) {
         switchToTimeline();
         if (e.target.classList.contains('track-bg')) {
@@ -363,10 +372,9 @@
             startMarquee(e);
         } else {
             if (!e.shiftKey) selectedClipIds.set([]);
-            // 指針拖曳開始 (Scrubbing)
             isScrubbing = true;
             updateTimeFromEvent(e);
-            startAutoScrollLoop(); // 啟動
+            startAutoScrollLoop();
             window.addEventListener('mousemove', handleTimelineMouseMove);
             window.addEventListener('mouseup', handleTimelineMouseUp);
         }
@@ -376,13 +384,12 @@
         isSelecting = true;
         if (!scrollContainer) return;
         const rect = scrollContainer.getBoundingClientRect();
-        // Marquee 的計算是相對 scrollContainer 內容的，所以直接用 scrollLeft 就好，不用額外修正 delta
         const startX = e.clientX - rect.left + scrollContainer.scrollLeft;
         const startY = e.clientY - rect.top + scrollContainer.scrollTop;
         selectStartX = startX; selectStartY = startY;
         selectBox = { x: startX, y: startY, width: 0, height: 0 };
         
-        startAutoScrollLoop(); // 啟動
+        startAutoScrollLoop();
         window.addEventListener('mousemove', handleMarqueeMove);
         window.addEventListener('mouseup', stopMarquee);
     }
@@ -393,7 +400,6 @@
         checkAutoScroll(e.clientX);
 
         const rect = scrollContainer.getBoundingClientRect();
-        // 這裡因為直接讀取最新的 scrollLeft，所以不需要像 MoveClip 那樣計算 Delta，自動就會跟隨捲動
         const currentX = e.clientX - rect.left + scrollContainer.scrollLeft;
         const currentY = e.clientY - rect.top + scrollContainer.scrollTop;
         const x = Math.min(selectStartX, currentX);
@@ -410,7 +416,6 @@
         const isYOverlap = (track) => boxTop < track.bottom && boxBottom > track.top;
 
         const newSelected = [];
-        // (省略重複的選取邏輯，保持原樣)
         const checkTrack = (trackClips) => {
              trackClips.forEach(clip => {
                 if (clip.startOffset < endTime && (clip.startOffset + clip.duration) > startTime) newSelected.push(clip.id);
@@ -426,12 +431,12 @@
     function stopMarquee() {
         isSelecting = false;
         selectBox = { x: 0, y: 0, width: 0, height: 0 };
-        stopAutoScrollLoop(); // 停止
+        stopAutoScrollLoop();
         window.removeEventListener('mousemove', handleMarqueeMove);
         window.removeEventListener('mouseup', stopMarquee);
     }
 
-    // --- Timeline Playhead Logic (Updated) ---
+    // --- Timeline Playhead Logic ---
     function handleTimelineMouseMove(e) { 
         lastMouseEvent = e;
         checkAutoScroll(e.clientX);
@@ -440,7 +445,7 @@
 
     function handleTimelineMouseUp() { 
         isScrubbing = false;
-        stopAutoScrollLoop(); // 停止
+        stopAutoScrollLoop();
         window.removeEventListener('mousemove', handleTimelineMouseMove); 
         window.removeEventListener('mouseup', handleTimelineMouseUp); 
     }
@@ -448,15 +453,11 @@
     function updateTimeFromEvent(e) {
         if (!timelineContainer) return;
         const rect = timelineContainer.getBoundingClientRect();
-        // getBoundingClientRect 取得的是相對視窗的位置
-        // 當 scrollContainer 捲動時，timelineContainer (內容) 會往左移，rect.left 會變小 (變成負數)
-        // 所以 e.clientX - rect.left 自然會算出正確的 timelineX，不需要額外加 scrollLeft
         const x = e.clientX - rect.left;
         const timelineX = x - 96; 
         currentTime.set(Math.max(0, timelineX / pixelsPerSecond));
     }
 
-    // (Canvas Draw Function 保持不變，省略)
     function drawWaveform(canvas, clip) {
         if (!canvas || !clip.waveform) return;
         const rect = canvas.getBoundingClientRect();
@@ -491,9 +492,8 @@
 
 <svelte:window on:keydown={handleKeyDown} />
 
-<!-- HTML 結構保持不變 -->
 <div class="h-[35%] bg-[#181818] border-t border-gray-700 flex flex-col relative select-none overflow-hidden">
-    <!-- Header Controls -->
+    
     <div class="h-8 bg-[#252525] border-b border-gray-700 flex items-center px-4 justify-between z-50 relative">
         <div class="flex items-center gap-2">
             <button on:click={handleSplit} class="text-gray-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-700 transition-colors text-xs" title="Split (Ctrl+B)">
@@ -508,8 +508,13 @@
         </div>
     </div>
 
-    <!-- Scroll Container -->
-    <div bind:this={scrollContainer} class="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative">
+    <!-- 🔥 使用 on:scroll 代替 bind:scrollLeft -->
+    <div 
+        bind:this={scrollContainer} 
+        bind:clientWidth={visibleWidth}
+        on:scroll={handleScroll}
+        class="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative"
+    >
         <div bind:this={timelineContainer} class="relative h-full flex flex-col min-w-full" style="width: {totalDuration * pixelsPerSecond + 100}px;" on:mousedown={handleTimelineMouseDown}>
 
             <!-- Ruler -->
