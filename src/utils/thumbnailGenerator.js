@@ -1,106 +1,170 @@
 // src/utils/thumbnailGenerator.js
 
-export async function generateThumbnails(file, fixedDuration) {
-    // 1. 圖片直接回傳
-    if (file.type.startsWith('image')) {
-        return [file]; 
+/**
+ * 產生影片縮圖（純前端）
+ *
+ * @param {File|Blob} file              - 來源檔（video 或 image）
+ * @param {Object}    opts
+ * @param {number}    [opts.fixedDuration]      - 外部指定時長（秒），未提供則用影片 metadata
+ * @param {number}    [opts.targetCount]        - 直接指定要幾張縮圖（優先於 secondsPerThumb 規則）
+ * @param {number}    [opts.secondsPerThumb=5]  - 每幾秒取一張
+ * @param {number}    [opts.minThumbs=10]       - 最少張數
+ * @param {number}    [opts.maxThumbs=120]      - 最多張數（防止長片炸掉）
+ * @param {number}    [opts.thumbWidth=150]     - 單張縮圖目標寬度（px），高度按比例
+ * @returns {Promise<Blob[]>}                   - 回傳縮圖 Blob 陣列（jpeg）
+ */
+export async function generateThumbnails(file, opts = {}) {
+    const {
+      fixedDuration,
+      targetCount,
+      secondsPerThumb = 5,
+      minThumbs = 10,
+      maxThumbs = 120,
+      thumbWidth = 150
+    } = opts;
+  
+    // 1) 圖片直接回傳（與舊行為一致）
+    if (file && file.type && file.type.startsWith('image')) {
+      return [file];
     }
-
-    // 寬鬆檢查：支援 video type 或是 .mov 檔名
-    const isVideo = file.type.startsWith('video') || file.name.toLowerCase().endsWith('.mov');
-    
-    if (!isVideo) {
-        return [];
-    }
-
+  
+    // 2) 僅接受 video（含 mov 副檔名）
+    const name = (file?.name || '').toLowerCase();
+    const isVideo =
+      (file?.type && file.type.startsWith('video')) ||
+      name.endsWith('.mov') ||
+      name.endsWith('.m4v') ||
+      name.endsWith('.mp4') ||
+      name.endsWith('.webm');
+  
+    if (!isVideo) return [];
+  
+    // ---- 主要流程 ----
     return new Promise(async (resolve) => {
-        const video = document.createElement('video');
-        video.src = URL.createObjectURL(file);
-        video.muted = true;
-        video.playsInline = true; // iOS 支援關鍵
-        
-        // 等待影片 metadata 載入
-        await new Promise(r => {
-            video.onloadedmetadata = r; // 改用 onloadedmetadata 通常比較快取得 duration
-            video.onerror = r; 
-        });
-        
-        // 🔥 取得正確時長：優先用傳入的，沒有就用影片自身的，再沒有就預設 30
-        let duration = fixedDuration || video.duration;
-        if (!duration || duration === Infinity || isNaN(duration)) duration = 30;
-
-        // 🔥🔥🔥 關鍵修改：動態決定數量 🔥🔥🔥
-        // 邏輯：每 5 秒一張圖。
-        // 下限：最少 5 張（短影片才不會空空的）。
-        // 上限：最多 30 張（防止長影片生成幾百張導致瀏覽器崩潰）。
-        const count = Math.min(30, Math.max(5, Math.ceil(duration / 5)));
-
-        const blobs = [];
-        const canvas = document.createElement('canvas');
-        
-        // 針對 MOV 調整：有些 MOV 寬高讀取較慢，給個預設值防止 canvas 報錯
-        const vWidth = video.videoWidth || 1280;
-        const vHeight = video.videoHeight || 720;
-        
-        // 縮圖寬度固定 150px 左右，高度按比例
-        const scale = 150 / vWidth;
-        canvas.width = vWidth * scale;
-        canvas.height = vHeight * scale;
-        const ctx = canvas.getContext('2d');
-
-        // 備用幀 (Backup Frame)：防止某個時間點 seek 失敗變黑畫面
-        let backupBlob = null;
+      const video = document.createElement('video');
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true; // iOS
+  
+      // 先拿 metadata
+      await new Promise((r) => {
+        video.onloadedmetadata = r;
+        video.onerror = r;
+      });
+  
+      // 時長
+      let duration = fixedDuration || video.duration;
+      if (!duration || !isFinite(duration)) duration = 30;
+  
+      // 動態縮圖數量
+      const count =
+        targetCount ??
+        Math.min(
+          maxThumbs,
+          Math.max(minThumbs, Math.ceil(duration / Math.max(1, secondsPerThumb)))
+        );
+  
+      const blobs = [];
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  
+      // 尺寸（先給預設，避免 0*0）
+      let vW = video.videoWidth || 1280;
+      let vH = video.videoHeight || 720;
+      const scale = thumbWidth / vW;
+      canvas.width = Math.max(1, Math.round(vW * scale));
+      canvas.height = Math.max(1, Math.round(vH * scale));
+  
+      // 嘗試先抓一張備援幀
+      let backupBlob = null;
+      try {
+        await seekTo(video, Math.min(0.5, duration * 0.02)); // 前 2% 或 0.5s
+        // 若 metadata 後才拿到正確寬高，補調整一次
+        if (video.videoWidth && video.videoHeight) {
+          vW = video.videoWidth;
+          vH = video.videoHeight;
+          const s = thumbWidth / vW;
+          canvas.width = Math.max(1, Math.round(vW * s));
+          canvas.height = Math.max(1, Math.round(vH * s));
+        }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        backupBlob = await toBlob(canvas, 'image/jpeg', 0.7);
+      } catch (_) {
+        // ignore
+      }
+  
+      // 逐張擷取
+      for (let i = 0; i < count; i++) {
+        // 均勻取樣（包含起點，不含終點，避免最後一張 seek 越界）
+        const t = Math.min(duration - 0.001, (duration / count) * i);
+  
         try {
-            // 先抓第 0.5 秒當作備用圖
-            video.currentTime = 0.5; 
-            await new Promise(r => { video.onseeked = r; setTimeout(r, 1000); });
-            
-            // 重新確認寬高 (有時候 seek 後才有寬高)
-            if (video.videoWidth) {
-                // 如果第一次沒抓到寬高，這裡更新一下
-                const currentScale = 150 / video.videoWidth;
-                canvas.width = video.videoWidth * currentScale;
-                canvas.height = video.videoHeight * currentScale;
-                
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                backupBlob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
-            }
-        } catch (e) {
-            console.warn("Backup frame failed", e);
+          await seekTo(video, t, 900); // 900ms 超時
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const blob = await toBlob(canvas, 'image/jpeg', 0.7);
+          blobs.push(blob);
+          backupBlob = blob; // 更新備援
+        } catch (_) {
+          if (backupBlob) blobs.push(backupBlob);
         }
-
-        // 開始迴圈截圖
-        for (let i = 0; i < count; i++) {
-            const time = (duration / count) * i;
-            
-            try {
-                if (!Number.isFinite(time)) throw new Error("Invalid time");
-                video.currentTime = time;
-                
-                // Seek 等待：最多等 800ms，超過就用備用圖
-                await new Promise((seekResolve, seekReject) => {
-                    const timer = setTimeout(() => seekReject('timeout'), 800);
-                    video.onseeked = () => { clearTimeout(timer); seekResolve(); };
-                });
-
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
-                blobs.push(blob);
-                
-                // 更新備用圖為最新成功的一張 (這樣如果下一張失敗，會用上一張來補，比較自然)
-                backupBlob = blob;
-
-            } catch (e) {
-                // 如果失敗 (timeout 或解碼錯誤)，塞入備用圖
-                if (backupBlob) blobs.push(backupBlob);
-            }
-        }
-
-        URL.revokeObjectURL(video.src);
-        
-        // 極端情況防護
-        if (blobs.length === 0 && backupBlob) blobs.push(backupBlob);
-        
-        resolve(blobs);
+      }
+  
+      URL.revokeObjectURL(url);
+      if (blobs.length === 0 && backupBlob) blobs.push(backupBlob);
+      resolve(blobs);
     });
-}
+  }
+  
+  // ---------- Helpers ----------
+  
+  function toBlob(canvas, type = 'image/jpeg', quality = 0.7) {
+    return new Promise((res) => canvas.toBlob(res, type, quality));
+  }
+  
+  /**
+   * 在影片上安全地 seek 到指定時間點，提供 timeout 保護。
+   * @param {HTMLVideoElement} video
+   * @param {number} timeSec
+   * @param {number} timeoutMs
+   */
+  function seekTo(video, timeSec, timeoutMs = 800) {
+    return new Promise((resolve, reject) => {
+      let done = false;
+  
+      const onSeeked = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve();
+      };
+  
+      const onError = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        reject(new Error('seek error'));
+      };
+  
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        cleanup();
+        reject(new Error('seek timeout'));
+      }, timeoutMs);
+  
+      const cleanup = () => {
+        clearTimeout(timer);
+        video.onseeked = null;
+        video.onerror = null;
+      };
+  
+      video.onseeked = onSeeked;
+      video.onerror = onError;
+  
+      // 有些瀏覽器對相同時間不觸發 seeked，微調 0.001s 以確保觸發
+      const t = Math.max(0, Math.min(video.duration || Infinity, timeSec));
+      video.currentTime = t + 0.0001;
+    });
+  }
+  
