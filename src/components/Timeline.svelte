@@ -539,7 +539,7 @@
                                     >
                                         {#each clip.thumbnailUrls as url}
                                         <div class="flex-1 h-full min-w-0 border-r border-white/20 last:border-0 overflow-hidden bg-black/50">
-                                            <!-- 
+                                          <!-- 
                                                object-cover: 確保圖片填滿高度，不會變形。
                                                如果格子被拉很寬，圖片會裁切但不會被壓扁或拉長得太離譜。
                                             -->

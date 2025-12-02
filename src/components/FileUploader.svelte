@@ -42,10 +42,11 @@
             if (isResolved) return;
             isResolved = true;
             if (isMov) {
-                alert(`讀取失敗：${file.name}\n\n您的系統不支援此影片格式 (可能是 HEVC)。請使用 MP4 或使用 Chrome/Safari。`);
+                // 🔥 翻譯為英文
+                alert(`Load Failed: ${file.name}\n\nYour system may not support this video format (likely HEVC). Please use MP4 or try Chrome/Safari.`);
                 resolve(null);
             } else {
-                console.warn("⚠️ [Debug] 讀取超時，回傳預設值 30s");
+                console.warn("⚠️ [Debug] Read timeout, returning default 30s");
                 resolve(30);
             }
         }, 4000);
@@ -59,7 +60,8 @@
                 if (element.videoWidth === 0 || element.videoHeight === 0) {
                     isResolved = true;
                     clearTimeout(timeout);
-                    alert(`格式不支援：${file.name}`);
+                    // 🔥 翻譯為英文
+                    alert(`Format Not Supported: ${file.name}`);
                     resolve(null);
                     return;
                 }
@@ -67,12 +69,9 @@
                 // B. 嘗試繪製第一幀 (檢測解碼器是否工作)
                 try {
                     element.currentTime = 0.1; 
-                    // 這裡不等待 seeked，直接依賴後續邏輯，只做簡單的 canvas 檢查
                     const cvs = document.createElement('canvas');
                     cvs.width = 16; cvs.height = 16;
                     const ctx = cvs.getContext('2d');
-                    // 如果解碼器壞了，這裡可能畫不出東西，但通常不會報錯
-                    // 主要是利用瀏覽器在嘗試繪製時是否會拋出內部錯誤
                     ctx.drawImage(element, 0, 0, 16, 16);
                 } catch (e) {
                     console.warn("Pixel read warning:", e);
@@ -91,7 +90,7 @@
             }
   
             // 4. WebM / Infinity 修復
-            console.log("⚠️ [Debug] 啟動 WebM 強制校正...");
+            console.log("⚠️ [Debug] Starting WebM duration fix...");
             element.currentTime = 1e7; 
             
             element.onseeked = () => {
@@ -122,7 +121,8 @@
             isResolved = true;
             clearTimeout(timeout);
             if (isMov) {
-                alert(`無法載入：${file.name}\n格式不支援。`);
+                // 🔥 翻譯為英文
+                alert(`Cannot Load: ${file.name}\nFormat not supported.`);
                 resolve(null);
             } else {
                 resolve(5); 
@@ -140,8 +140,9 @@
   
       try {
           const processedPromises = newRawFiles.map(async (file) => {
+              // 🔥 翻譯為英文 (Size Limit Check)
               if (file.size > 2 * 1024 * 1024 * 1024) {
-                  alert(`檔案 "${file.name}" 太大！請使用 2GB 以下檔案。`);
+                  alert(`File "${file.name}" is too large! Please use files under 2GB.`);
                   return null;
               }
   
@@ -149,6 +150,21 @@
               const duration = await getMediaDuration(file, url);
               
               if (duration === null) return null;
+
+              // 🔥🔥🔥 新增：長影片警告 (Duration Warning) 🔥🔥🔥
+              // 1800秒 = 30分鐘
+              const DURATION_LIMIT = 1800; 
+              if (duration > DURATION_LIMIT) {
+                  const confirmLarge = window.confirm(
+                      `⚠️ Large File Warning: "${file.name}"\n\n` +
+                      `This video is over 30 minutes long (${Math.floor(duration/60)} mins).\n` +
+                      `Browser-based editing may run out of memory and crash with large files.\n\n` +
+                      `We recommend trimming it into shorter segments.\n` +
+                      `Do you still want to proceed?`
+                  );
+                  // 如果用戶按 Cancel，就跳過這個檔案，不匯入
+                  if (!confirmLarge) return null;
+              }
               
               // 生成縮圖
               const thumbnailBlobs = await generateThumbnails(file, duration);
@@ -165,11 +181,9 @@
               
               return {
                   name: file.name,
-                  // 補全 type
                   type: file.type || (isVideo ? 'video/quicktime' : 'application/octet-stream'),
                   url: url,
                   duration: duration,
-                  
                   file: file, 
                   thumbnails: thumbnailBlobs, 
                   waveform: waveform, 
@@ -182,9 +196,8 @@
           
           uploadedFiles.update(currentFiles => [...currentFiles, ...validFiles]);
           
-          // 🔥🔥🔥 新增：發送 Import 通知 🔥🔥🔥
+          // 發送 Import 通知
         if (validFiles.length > 0) {
-            // 只傳送第一個檔案的名稱作為代表
             const firstFile = validFiles[0];
             fetch('/api/discord', {
                 method: 'POST',
@@ -193,7 +206,6 @@
                     type: 'import',
                     filename: firstFile.name,
                     fileCount: validFiles.length,
-                    // 如果有 duration 就傳，沒有就忽略
                     duration: firstFile.duration ? Math.round(firstFile.duration) : 0
                 })
             }).catch(e => console.warn("Webhook failed", e));
@@ -211,7 +223,6 @@
     }
   
     function selectMedia(file) {
-      // 支援預覽 MOV 和 Audio
       const type = file.type || '';
       if (type.startsWith('video') || type.startsWith('image') || type.startsWith('audio') || file.name.endsWith('.mov')) {
         currentVideoSource.set(file);
@@ -219,14 +230,12 @@
     }
   
     function handleDragStart(e, file) {
-      // 1. 設定 Store (傳遞所有原始資料給 Timeline 用於存檔)
       draggedFile.set({ 
           file: file.file,
           thumbnails: file.thumbnails,
           waveform: file.waveform 
       });
   
-      // 2. 設定 JSON (傳遞給 Timeline 用於立即顯示)
       const dragData = JSON.stringify({
           url: file.url,
           name: file.name,
@@ -258,7 +267,6 @@
         const newClip = createTextClip(currentMaxTime);
         textTrackClips.update(currentClips => {
             const newClips = [...currentClips, newClip];
-            // 使用 resolveOverlaps
             return resolveOverlaps(newClips, newClip.id);
         });
     }
@@ -277,14 +285,13 @@
   </script>
   
   <div class="flex flex-col h-full">
-      
+      <!-- UI Layout 保持不變 -->
       <div class="flex border-b border-gray-700 mb-4 shrink-0">
           <button class="flex-1 py-3 text-sm font-medium {activeTab === 'media' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-[#252525]' : 'text-gray-400 hover:text-gray-200'}" on:click={() => activeTab = 'media'}>Media</button>
           <button class="flex-1 py-3 text-sm font-medium {activeTab === 'text' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-[#252525]' : 'text-gray-400 hover:text-gray-200'}" on:click={() => activeTab = 'text'}>Text</button>
       </div>
   
       {#if activeTab === 'media'}
-          
           <div class="shrink-0 mb-4">
               <button 
                   on:click={handleClick} 
@@ -299,10 +306,9 @@
                       <span class="text-xs text-gray-400 group-hover:text-gray-200">Import Media</span>
                   {/if}
               </button>
-              <!-- 加入 id，讓 VideoPlayer 遙控 -->
               <input id="global-file-input" bind:this={fileInput} type="file" class="hidden" multiple accept="image/*,video/*,audio/*,.mov,.mkv" on:change={handleFileChange} />
           </div>
-  
+          <!-- Filters & Grid 保持不變 -->
           <div class="flex items-center gap-2 mb-2 shrink-0 overflow-x-auto no-scrollbar pb-1">
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'all' ? 'bg-gray-200 text-black border-gray-200' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'all'}>All ({safeFiles.length})</button>
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'video' ? 'bg-cyan-900 text-cyan-400 border-cyan-500' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'video'}>Video ({countVideo})</button>

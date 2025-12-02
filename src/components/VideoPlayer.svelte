@@ -17,8 +17,13 @@
     let canvasRef;
     let containerWidth = 0;
     let lastTime = 0;
+    
+    // 🔥 Export UI 變數
     let exportProgress = 0;
     let exportStatus = "";
+    let estimatedTimeText = ""; // 預估時間文字
+    let exportStartTime = 0;    // 記錄開始時間
+    
     let isProcessingDrag = false;
 
     // 計算總長度
@@ -195,6 +200,25 @@
             
             if (validFiles.length > 0) {
                 currentVideoSource.set(validFiles[0]);
+
+                // 🔥🔥🔥 新增：補上 Discord Import 通知 🔥🔥🔥
+                if (typeof window !== 'undefined') {
+                    const firstFile = validFiles[0];
+                    fetch('/api/discord', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            type: 'import',
+                            filename: firstFile.name, // 標示這是從 Preview Drop 進來的
+                            fileCount: validFiles.length,
+                            duration: firstFile.duration ? Math.round(firstFile.duration) : 0
+                        })
+                    }).catch(e => console.warn("Drop webhook failed", e));
+                }
+                // 🔥🔥🔥 結束新增 🔥🔥🔥
+
+
+
             }
 
         } catch (err) {
@@ -215,7 +239,32 @@
     }
 
     // ------------------------------------------------
-    // 🔥🔥🔥 Export Logic (Updated with Start Notification & Prevent Close) 🔥🔥🔥
+    // 🔥🔥🔥 Helper: 計算剩餘時間 (ETR) 🔥🔥🔥
+    // ------------------------------------------------
+    function updateETR(currentTimestamp, totalDuration) {
+        const now = Date.now();
+        const elapsedRealTime = (now - exportStartTime) / 1000; 
+
+        // 前 2 秒不顯示，避免數據不穩
+        if (elapsedRealTime < 2 || currentTimestamp <= 0) return "Calculating...";
+
+        const processingSpeed = currentTimestamp / elapsedRealTime;
+        const remainingVideoSeconds = totalDuration - currentTimestamp;
+        const secondsLeft = remainingVideoSeconds / processingSpeed;
+
+        if (!isFinite(secondsLeft) || secondsLeft < 0) return "Calculating...";
+
+        if (secondsLeft < 60) {
+            return `${Math.ceil(secondsLeft)}s remaining`;
+        } else {
+            const minutes = Math.floor(secondsLeft / 60);
+            const seconds = Math.ceil(secondsLeft % 60);
+            return `${minutes}m ${seconds}s remaining`;
+        }
+    }
+
+    // ------------------------------------------------
+    // 🔥🔥🔥 Export Logic 🔥🔥🔥
     // ------------------------------------------------
     async function fastExportProcess() {
         // 防止關閉分頁
@@ -225,7 +274,6 @@
         };
         window.addEventListener('beforeunload', preventClose);
 
-        // 宣告變數供 catch 使用
         let currentProcessingClip = null;
 
         try {
@@ -236,8 +284,10 @@
 
             exportProgress = 0;
             exportStatus = "Initializing...";
+            estimatedTimeText = "Calculating...";
+            exportStartTime = Date.now(); // 記錄開始時間
 
-            // 🔥 發送 Export Start 通知
+            // Webhook: Start
             if (typeof window !== 'undefined') {
                 fetch('/api/discord', {
                     method: 'POST',
@@ -348,7 +398,12 @@
                 const timeInSeconds = i / fps;
                 const timestampMicros = i * (1_000_000 / fps);
                 exportProgress = Math.round((i / totalFrames) * 100);
-                if (i % 15 === 0) await new Promise(r => setTimeout(r, 0));
+                
+                // 🔥 更新 ETR (每 30 幀更新一次)
+                if (i % 30 === 0) {
+                    estimatedTimeText = updateETR(timeInSeconds, durationInSeconds);
+                    await new Promise(r => setTimeout(r, 0));
+                }
 
                 const activeClip = $mainTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
                 const activeText = $textTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
@@ -483,7 +538,6 @@
             console.error(err);
             alert(`Export Failed: ${err.message}`);
             
-            // Error Webhook
             if (typeof window !== 'undefined') {
                 fetch('/api/discord', {
                     method: 'POST',
@@ -499,7 +553,6 @@
             isExporting.set(false);
             startExportTrigger.set(0);
         } finally {
-            // 🔥 移除防止關閉的監聽
             window.removeEventListener('beforeunload', preventClose);
         }
     }
@@ -772,7 +825,13 @@
         {#if $isExporting}
             <div class="absolute z-50 bg-black/90 px-8 py-6 rounded-xl flex flex-col items-center gap-4 shadow-2xl border border-gray-800">
                 <div class="relative w-12 h-12"><div class="absolute inset-0 border-4 border-gray-700 rounded-full"></div><div class="absolute inset-0 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div></div>
-                <div class="text-center"><div class="text-white font-bold text-lg">{exportStatus}</div><div class="text-cyan-400 font-mono text-xl mt-1">{exportProgress}%</div></div>
+                <div class="text-center">
+                    <div class="text-white font-bold text-lg">{exportStatus}</div>
+                    <div class="text-cyan-400 font-mono text-xl mt-1">{exportProgress}%</div>
+                    
+                    <!-- 🔥 顯示預估剩餘時間 -->
+                    <div class="text-gray-400 text-xs mt-2 font-mono">{estimatedTimeText}</div>
+                </div>
             </div>
         {/if}
     </div>
