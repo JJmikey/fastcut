@@ -2,12 +2,13 @@
     import { currentVideoSource, currentTime, isPlaying } from '../stores/playerStore';
     import { mainTrackClips, audioTrackClips, textTrackClips, draggedFile, projectSettings, uploadedFiles, generateId, resolveOverlaps, createTextClip } from '../stores/timelineStore';
     import { isExporting, startExportTrigger } from '../stores/exportStore';
+    // 引入 FileSystemWritableFileStreamTarget 以支援直接寫入硬碟
     import { Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget } from 'mp4-muxer';
     import { get } from 'svelte/store';
     
     // Utils
     import { decodeGifFrames } from '../utils/gifHelper';
-    import { getMediaDuration } from '../utils/mediaHelpers'; 
+    // 這裡我們在元件內重新定義 getMediaDuration 以確保使用最新邏輯
     import { generateThumbnails } from '../utils/thumbnailGenerator';
     import { generateWaveform } from '../utils/waveformGenerator';
 
@@ -38,6 +39,132 @@
     // 監聽導出觸發
     $: if ($startExportTrigger > 0 && !$isExporting && hasClips) {
         fastExportProcess();
+    }
+
+    // --- Helper: 取得檔案真實長度 (WebM 修復版) ---
+    function getMediaDuration(file, url) {
+      return new Promise((resolve) => {
+        if (file.type.startsWith('image')) { resolve(3); return; } 
+  
+        const isVideo = file.type.startsWith('video') || file.name.toLowerCase().endsWith('.mov');
+        const element = isVideo ? document.createElement('video') : document.createElement('audio');
+        
+        element.preload = 'metadata';
+        element.muted = true;
+        element.src = url;
+        if (isVideo) element.playsInline = true;
+  
+        const isMov = file.name.toLowerCase().endsWith('.mov') || file.type === 'video/quicktime';
+        let isResolved = false;
+  
+        // 1. 超時保護
+        const timeout = setTimeout(() => {
+            if (isResolved) return;
+            isResolved = true;
+            if (isMov) {
+                alert(`Load Failed: ${file.name}\n\nSystem format issue. Try Chrome/Safari.`);
+                resolve(null);
+            } else {
+                console.warn("⚠️ [Debug] Read timeout, returning default 30s");
+                resolve(30);
+            }
+        }, 4000);
+  
+        element.onloadedmetadata = () => {
+            if (isResolved) return;
+            
+            // 像素檢查
+            if (element instanceof HTMLVideoElement) {
+                if (element.videoWidth === 0 || element.videoHeight === 0) {
+                    isResolved = true;
+                    clearTimeout(timeout);
+                    alert(`Format Not Supported: ${file.name}`);
+                    resolve(null);
+                    return;
+                }
+            }
+  
+            const rawDuration = element.duration;
+            
+            // 優先信任瀏覽器，只要數值正常就直接回傳
+            if (rawDuration !== Infinity && !isNaN(rawDuration) && rawDuration > 0) {
+                isResolved = true;
+                clearTimeout(timeout);
+                resolve(rawDuration);
+                return;
+            }
+  
+            // 只有當 duration 是 Infinity 時，才啟動 WebM 修復
+            console.log("⚠️ [Debug] Duration is Infinity. Starting WebM fix...");
+            element.currentTime = 1e7; 
+            
+            element.onseeked = () => {
+                if (isResolved) return;
+                isResolved = true;
+                clearTimeout(timeout);
+  
+                let realDuration = element.currentTime;
+                if (realDuration === 0 || realDuration > 360000) { 
+                     if (element.buffered.length > 0) {
+                        realDuration = element.buffered.end(element.buffered.length - 1);
+                     }
+                }
+                if (realDuration === 0 || realDuration > 360000) {
+                    realDuration = 30; 
+                }
+                resolve(realDuration);
+            };
+        };
+  
+        element.onerror = () => { 
+            if (isResolved) return;
+            isResolved = true;
+            clearTimeout(timeout);
+            if (isMov) {
+                alert(`Cannot Load: ${file.name}`);
+                resolve(null);
+            } else {
+                resolve(5); 
+            }
+        };
+      });
+    }
+
+    // --- Helper: ETR (預估剩餘時間) ---
+    function updateETR(currentTimestamp, totalDuration) {
+        const now = Date.now();
+        const elapsedRealTime = (now - exportStartTime) / 1000; 
+
+        if (elapsedRealTime < 2 || currentTimestamp <= 0) return "Calculating...";
+
+        const processingSpeed = currentTimestamp / elapsedRealTime;
+        const remainingVideoSeconds = totalDuration - currentTimestamp;
+        const secondsLeft = remainingVideoSeconds / processingSpeed;
+
+        if (!isFinite(secondsLeft) || secondsLeft < 0) return "Calculating...";
+
+        if (secondsLeft < 60) {
+            return `${Math.ceil(secondsLeft)}s remaining`;
+        } else {
+            const minutes = Math.floor(secondsLeft / 60);
+            const seconds = Math.ceil(secondsLeft % 60);
+            return `${minutes}m ${seconds}s remaining`;
+        }
+    }
+
+    // 🔥🔥🔥 Helper: Smart Bitrate (高畫質版) 🔥🔥🔥
+    function getSmartBitrate(width, height, fps) {
+        const numPixels = width * height;
+        // 4K (3840x2160) -> 50 Mbps (為了減少 WebM 轉檔損失)
+        if (numPixels >= 8_294_400) return 50_000_000; 
+        // 2K (2560x1440) -> 25 Mbps
+        if (numPixels >= 3_686_400) return 25_000_000;
+        // 1080p (1920x1080) -> 12 Mbps
+        if (numPixels >= 2_073_600) return 12_000_000;
+        // 720p -> 6 Mbps
+        if (numPixels >= 921_600) return 6_000_000;
+        // 480p or lower -> 3 Mbps
+        return 3_000_000;
     }
 
     // --- Add to Project ---
@@ -247,30 +374,8 @@
         if (input) input.click();
     }
 
-    // --- Helper: ETR ---
-    function updateETR(currentTimestamp, totalDuration) {
-        const now = Date.now();
-        const elapsedRealTime = (now - exportStartTime) / 1000; 
-
-        if (elapsedRealTime < 2 || currentTimestamp <= 0) return "Calculating...";
-
-        const processingSpeed = currentTimestamp / elapsedRealTime;
-        const remainingVideoSeconds = totalDuration - currentTimestamp;
-        const secondsLeft = remainingVideoSeconds / processingSpeed;
-
-        if (!isFinite(secondsLeft) || secondsLeft < 0) return "Calculating...";
-
-        if (secondsLeft < 60) {
-            return `${Math.ceil(secondsLeft)}s remaining`;
-        } else {
-            const minutes = Math.floor(secondsLeft / 60);
-            const seconds = Math.ceil(secondsLeft % 60);
-            return `${minutes}m ${seconds}s remaining`;
-        }
-    }
-
     // ------------------------------------------------
-    // 🔥🔥🔥 Export Logic 🔥🔥🔥
+    // 🔥🔥🔥 Export Logic (All Fixes Integrated) 🔥🔥🔥
     // ------------------------------------------------
     async function fastExportProcess() {
         const preventClose = (e) => {
@@ -313,7 +418,7 @@
             const durationInSeconds = contentDuration; 
             const totalFrames = Math.ceil(durationInSeconds * fps);
             
-            // 決定儲存方式
+            // 決定儲存方式 (OPFS vs RAM)
             let muxerTarget;
             if (typeof window.showSaveFilePicker === 'function') {
                 try {
@@ -364,9 +469,26 @@
                 error: (e) => { throw e; }
             });
             
-            const videoConfig = { codec: 'avc1.4d002a', width, height, bitrate: 8_000_000, framerate: fps };
+            // 🔥 使用高畫質 Smart Bitrate
+            const targetBitrate = getSmartBitrate(width, height, fps);
+            
+            // 🔥 優先請求 High Profile (avc1.64002a) 以獲得最佳畫質
+            const videoConfig = { 
+                codec: 'avc1.64002a', 
+                width, 
+                height, 
+                bitrate: targetBitrate, 
+                framerate: fps 
+            };
+            
             const vSupport = await VideoEncoder.isConfigSupported(videoConfig);
-            if (!vSupport.supported) videoConfig.codec = 'avc1.42002a'; 
+            if (!vSupport.supported) {
+                videoConfig.codec = 'avc1.4d002a'; // 降級到 Main Profile
+                const vSupportMain = await VideoEncoder.isConfigSupported(videoConfig);
+                if (!vSupportMain.supported) {
+                    videoConfig.codec = 'avc1.42002a'; // 降級到 Baseline Profile
+                }
+            }
             
             await videoEncoder.configure(videoConfig);
 
@@ -499,7 +621,7 @@
                     }
                 }
 
-                // 🔥🔥🔥 修正文字渲染邏輯，支援多行與換行 🔥🔥🔥
+                // 🔥🔥🔥 修正文字渲染邏輯 (支援多行 + 垂直置中) 🔥🔥🔥
                 if (activeText) {
                     const fontSize = activeText.fontSize;
                     const lineHeight = fontSize * 1.2; 
@@ -513,8 +635,9 @@
                     const y = (activeText.y / 100) * height;
                     const padding = 20;
 
-                    // 計算總高度以垂直置中
+                    // 計算總高度
                     const totalTextHeight = lines.length * lineHeight;
+                    // 計算起始 Y (垂直置中)
                     const startY = y - (totalTextHeight / 2) + (lineHeight / 2);
 
                     if (activeText.showBackground) {
@@ -847,8 +970,7 @@
             </div>
         {/if}
         
-         <!-- 🔥🔥🔥 新增：全域 Loading 遮罩 (Global Loading Overlay) 🔥🔥🔥 -->
-        <!-- 把它放在最後面，並給予高 z-index，確保它永遠蓋在影片上面 -->
+         <!-- 全域 Loading 遮罩 -->
         {#if isProcessingDrag}
         <div class="absolute inset-0 z-[60] bg-black/80 flex flex-col items-center justify-center backdrop-blur-sm">
             <div class="w-12 h-12 border-4 border-gray-600 border-t-cyan-400 rounded-full animate-spin mb-4"></div>
@@ -856,9 +978,6 @@
            
         </div>
     {/if}
-    <!-- 🔥🔥🔥 結束新增 🔥🔥🔥 -->
-
-
 
         <!-- Overlays -->
         {#if isSourceMode}
