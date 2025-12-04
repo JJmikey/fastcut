@@ -174,6 +174,9 @@
         const source = $currentVideoSource;
         if (!source) return;
 
+        // 1. 這裡必須加入 addToHistory()，這樣按 Undo 才會回到「只有上一個片段」的狀態
+        addToHistory();
+
         const targetStore = isAudioType(source.type) ? audioTrackClips : mainTrackClips;
         const currentClips = get(targetStore);
         
@@ -205,6 +208,9 @@
     async function loadSampleProject() {
         try {
             isProcessingDrag = true; 
+            // 載入 Sample 前也建議加一個 History，以防萬一
+            addToHistory();
+
             const [vidRes, audRes] = await Promise.all([fetch('/sample_video.mp4'), fetch('/sample_audio.mp3')]);
             if (!vidRes.ok || !audRes.ok) throw new Error(`Sample files missing.`);
             const vidBlob = await vidRes.blob(); const audBlob = await audRes.blob();

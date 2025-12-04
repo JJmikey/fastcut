@@ -1,8 +1,11 @@
 <script>
     import { currentVideoSource } from '../stores/playerStore';
+    // 引入 Stores
     import { draggedFile, uploadedFiles, textTrackClips, createTextClip, resolveOverlaps, projectSettings, mainTrackClips, audioTrackClips } from '../stores/timelineStore';
+    // 引入 History Store
     import { addToHistory } from '../stores/historyStore';
     
+    // 引入工具函式
     import { generateThumbnails } from '../utils/thumbnailGenerator';
     import { generateWaveform } from '../utils/waveformGenerator'; 
     import { get } from 'svelte/store';
@@ -17,7 +20,7 @@
         fileInput.click(); 
     }
   
-    // 🔥🔥🔥 新版 Helper: 一次取得 時間 + 寬 + 高 🔥🔥🔥
+    // 🔥 Helper: 一次取得 時間 + 寬 + 高
     function getMediaInfo(file, url) {
       return new Promise((resolve) => {
         // Image
@@ -104,7 +107,7 @@
       });
     }
 
-    // 輔助：計算比例字串 (給 UI 顯示用)
+    // 輔助：計算比例字串
     function calculateAspectRatio(w, h) {
         if (!w || !h) return '16:9';
         const ratio = w / h;
@@ -131,7 +134,6 @@
   
               const url = URL.createObjectURL(file);
               
-              // 使用新版 Helper
               const info = await getMediaInfo(file, url);
               
               if (!info) return null;
@@ -179,7 +181,7 @@
           const results = await Promise.all(processedPromises);
           const validFiles = results.filter(result => result !== null);
           
-          // 🔥🔥🔥 核心邏輯合併：自動設定解析度 + 自動上軌 🔥🔥🔥
+          // 🔥🔥🔥 核心邏輯合併：自動設定解析度 + 自動上軌 + Undo/Redo 🔥🔥🔥
           const currentMainClips = get(mainTrackClips);
           const currentAudioClips = get(audioTrackClips);
           
@@ -188,7 +190,7 @@
               const firstVideo = validFiles.find(f => (f.type.startsWith('video') || f.name.endsWith('.mov')) && f.width > 0);
               
               if (firstVideo) {
-                  // 1. 存檔 (Undo Point)
+                  // ✅ 1. 在修改 Timeline 之前，先存檔！
                   addToHistory();
 
                   // 2. 自動設定畫布解析度 (Resolution)
@@ -202,7 +204,7 @@
 
                   // 3. 自動上軌 (Auto-Add to Timeline)
                   const newClip = {
-                        id: '_' + Math.random().toString(36).substr(2, 9), // 簡單生成 ID
+                        id: '_' + Math.random().toString(36).substr(2, 9), 
                         fileUrl: firstVideo.url,
                         name: firstVideo.name,
                         type: firstVideo.type,
@@ -324,6 +326,7 @@
       </div>
   
       {#if activeTab === 'media'}
+          
           <div class="shrink-0 mb-4">
               <button 
                   on:click={handleClick} 
