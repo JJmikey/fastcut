@@ -386,7 +386,11 @@
                 if (!info) return null;
                 const { duration, width, height } = info;
                 const DURATION_LIMIT = 1800; 
-                if (duration > DURATION_LIMIT) { if (!confirm(`⚠️ Large File: "${file.name}" > 30 mins.\nProceed?`)) return null; }
+                if (duration > DURATION_LIMIT) { if (!confirm(`⚠️ Large File Warning: "${file.name}"\n\n` +
+                      `This video is over 30 minutes long (${Math.floor(duration/60)} mins).\n` +
+                      `Browser-based editing may run out of memory and crash with large files.\n\n` +
+                      `We recommend trimming it into shorter segments.\n` +
+                      `Do you still want to proceed?`)) return null; }
                 const thumbnailBlobs = await generateThumbnails(file, duration);
                 const thumbnailUrls = thumbnailBlobs.map(b => URL.createObjectURL(b));
                 let waveform = null;
@@ -401,7 +405,7 @@
                 if (firstVideo) {
                     addToHistory();
                     console.log(`[Drag] Auto-set canvas: ${firstVideo.width}x${firstVideo.height}`);
-                    projectSettings.update(s => ({ ...s, width: firstVideo.width, height: firstVideo.height, aspectRatio: calculateAspectRatio(firstVideo.width, firstVideo.height) }));
+                    projectSettings.update(s => ({ ...s, width: firstVideo.width, height: firstVideo.height, aspectRatio: 'original'  }));
                 }
             }
             uploadedFiles.update(current => [...current, ...validFiles]);
