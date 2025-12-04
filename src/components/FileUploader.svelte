@@ -10,6 +10,30 @@
     import { generateWaveform } from '../utils/waveformGenerator'; 
     import { get } from 'svelte/store';
     
+    import { onMount } from 'svelte'; // 👈 記得加
+    import { getPendingFile } from '../utils/fileBridge'; // 👈 記得加
+
+    onMount(async () => {
+        // 檢查是否有從 Landing Page 傳過來的檔案
+        const pendingFile = await getPendingFile();
+        
+        if (pendingFile) {
+            console.log("Found pending file from Landing Page:", pendingFile.name);
+            // 模擬一個 event 物件傳給 handleFileChange
+            // 因為 handleFileChange 預期的是 e.target.files
+            const fakeEvent = {
+                target: {
+                    files: [pendingFile]
+                }
+            };
+            
+            // 呼叫原本的上傳邏輯
+            await handleFileChange(fakeEvent);
+        }
+    });
+
+
+
     let fileInput;
     let isProcessing = false;
     let activeFilter = 'all'; 
