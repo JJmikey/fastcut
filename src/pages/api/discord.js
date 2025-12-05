@@ -10,7 +10,7 @@ export const POST = async (context) => {
     }
 
     const data = await request.json();
-    const type = data.type; // 'export', 'import', 'sample', 'visit', 'feedback'
+    const type = data.type; // 'export', 'import', 'sample', 'visit', 'feedback', 'error'
 
     // 🔥 定義不同事件的樣式
     let title = "New Activity";
@@ -38,13 +38,15 @@ export const POST = async (context) => {
             title = "👀 New Visitor";
             color = 9807270; // 灰色
             break;
-        case 'feedback': // 🔥 新增：用戶反饋
+        case 'feedback': // 用戶反饋
             title = "📩 New User Feedback";
             color = 3891958; // 深天藍色
             break;
         case 'error':
-            title = "🚨 Error";
-            color = 15158332; // 紅色
+            title = "🚨 Export Error";
+            color = 15548997; // 紅色
+            // 🔥🔥🔥 關鍵修正：把錯誤訊息放進描述，不然只會看到標題 🔥🔥🔥
+            description = data.errorMessage ? `**Error:** ${data.errorMessage}` : "Unknown error occurred";
             break;
     }
 
@@ -52,11 +54,11 @@ export const POST = async (context) => {
     const fields = [];
     
     // 原有的邏輯 (針對媒體操作)
-    if (data.filename) fields.push({ name: "File", value: data.filename, inline: true });
+    if (data.filename) fields.push({ name: "File", value: data.filename, inline: false });
     if (data.fileCount) fields.push({ name: "Count", value: `${data.fileCount} files`, inline: true });
     if (data.duration) fields.push({ name: "Duration", value: `${data.duration}s`, inline: true });
     
-    // 🔥 新增：針對 Feedback 的邏輯
+    // 針對 Feedback 的邏輯
     if (type === 'feedback') {
         fields.push({ 
             name: "User Contact", 
@@ -68,6 +70,11 @@ export const POST = async (context) => {
             value: data.message || "No content", 
             inline: false 
         });
+    }
+
+    // 🔥 Error 專用 Field (如果前端有傳 stack trace)
+    if (type === 'error' && data.stack) {
+         fields.push({ name: "Stack", value: data.stack.substring(0, 1000), inline: false });
     }
 
     // 加上時間戳記
