@@ -7,11 +7,10 @@
     import { Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget } from 'mp4-muxer';
     import { get } from 'svelte/store';
     
+    // Utils
     import { decodeGifFrames } from '../utils/gifHelper';
     import { generateThumbnails } from '../utils/thumbnailGenerator';
     import { generateWaveform } from '../utils/waveformGenerator';
-
-   
 
     let videoRef;
     let audioRef; 
@@ -20,6 +19,7 @@
     let containerWidth = 0;
     let lastTime = 0;
     
+    // Export UI 變數
     let exportProgress = 0;
     let exportStatus = "";
     let estimatedTimeText = ""; 
@@ -27,6 +27,7 @@
     
     let isProcessingDrag = false;
 
+    // 防止重新整理後的幽靈觸發
     onMount(() => {
         isExporting.set(false);
         startExportTrigger.set(0);
@@ -49,7 +50,7 @@
     $: activeAudioClip = $audioTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
     $: activeTextClip = $textTrackClips.find(clip => $currentTime >= clip.startOffset && $currentTime < (clip.startOffset + clip.duration));
   
-    // 監聽導出觸發 (防止幽靈觸發)
+    // 監聽導出觸發 (Ghost Trigger Fix)
     $: if ($startExportTrigger > 0) {
         if (!$isExporting && hasClips) {
             fastExportProcess();
@@ -173,17 +174,10 @@
     function addToProject() {
         const source = $currentVideoSource;
         if (!source) return;
-
-        // 1. 這裡必須加入 addToHistory()，這樣按 Undo 才會回到「只有上一個片段」的狀態
         addToHistory();
-
         const targetStore = isAudioType(source.type) ? audioTrackClips : mainTrackClips;
         const currentClips = get(targetStore);
-        
-        const insertTime = currentClips.length > 0 
-            ? Math.max(...currentClips.map(c => c.startOffset + c.duration)) 
-            : 0;
-
+        const insertTime = currentClips.length > 0 ? Math.max(...currentClips.map(c => c.startOffset + c.duration)) : 0;
         const newClip = {
             id: generateId(),
             fileUrl: source.url || source.fileUrl,
@@ -199,7 +193,6 @@
             thumbnailUrls: source.thumbnailUrls || [],
             waveform: source.waveform
         };
-
         targetStore.update(clips => resolveOverlaps([...clips, newClip], newClip.id));
         currentVideoSource.set(null);
         currentTime.set(insertTime);
@@ -208,9 +201,7 @@
     async function loadSampleProject() {
         try {
             isProcessingDrag = true; 
-            // 載入 Sample 前也建議加一個 History，以防萬一
             addToHistory();
-
             const [vidRes, audRes] = await Promise.all([fetch('/sample_video.mp4'), fetch('/sample_audio.mp3')]);
             if (!vidRes.ok || !audRes.ok) throw new Error(`Sample files missing.`);
             const vidBlob = await vidRes.blob(); const audBlob = await audRes.blob();
@@ -245,6 +236,9 @@
                 text: "✨FastVideoCutter", fontSize: 28, color: '#ffffff', fontWeight: 'bold', fontFamily: 'Arial, sans-serif',
                 x: 90, y: 85, volume: 1.0, showBackground: true, backgroundColor: '#00000080', strokeWidth: 0, strokeColor: '#000000'
             }]);
+            
+            projectSettings.update(s => ({ ...s, width: 1280, height: 720, aspectRatio: '16:9' }));
+
             if (typeof window !== 'undefined') fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'sample', filename: 'Demo Project', duration: '10' }) }).catch(e => {});
         } catch (e) { console.error(e); alert("Failed to load sample project."); } finally { isProcessingDrag = false; }
     }
@@ -269,12 +263,7 @@
                 if (!info) return null;
                 const { duration, width, height } = info;
                 const DURATION_LIMIT = 1800; 
-                if (duration > DURATION_LIMIT) { if (!confirm(
-                    `⚠️ Large File Warning: "${file.name}"\n\n` +
-                      `This video is over 30 minutes long (${Math.floor(duration/60)} mins).\n` +
-                      `Browser-based editing may run out of memory and crash with large files.\n\n` +
-                      `We recommend trimming it into shorter segments.\n` +
-                      `Do you still want to proceed?`)) return null; }
+                if (duration > DURATION_LIMIT) { if (!confirm(`⚠️ Large File: "${file.name}" > 30 mins.\nProceed?`)) return null; }
                 const thumbnailBlobs = await generateThumbnails(file, duration);
                 const thumbnailUrls = thumbnailBlobs.map(b => URL.createObjectURL(b));
                 let waveform = null;
@@ -290,7 +279,6 @@
                 if (firstVideo) {
                     addToHistory();
                     console.log(`[Drag] Auto-set canvas: ${firstVideo.width}x${firstVideo.height}`);
-                    // 🔥🔥🔥 修正為 'original'，解決顯亮問題 🔥🔥🔥
                     projectSettings.update(s => ({ ...s, width: firstVideo.width, height: firstVideo.height, aspectRatio: 'original' }));
                 }
             }
@@ -320,6 +308,11 @@
         e.dataTransfer.effectAllowed = 'copy';
     }
 
+    // ------------------------------------------------
+    // 🔥🔥🔥 Export Logic (Full Integrated) 🔥🔥🔥
+    // ------------------------------------------------
+    
+    // 1. Audio Config
     async function chooseAudioEncoderConfig() {
         const aac = { codec: 'mp4a.40.2', sampleRate: 44100, numberOfChannels: 2, bitrate: 128_000 };
         try {
@@ -334,9 +327,7 @@
         throw new Error('No supported audio encoder (AAC/Opus) available.');
     }
 
-    // ------------------------------------------------
-    // 🔥🔥🔥 Export Logic (Full Integrated) 🔥🔥🔥
-    // ------------------------------------------------
+    // 2. Main Export Function
     async function fastExportProcess() {
         const preventClose = (e) => { e.preventDefault(); e.returnValue = ''; };
         window.addEventListener('beforeunload', preventClose);
@@ -370,10 +361,12 @@
                     writableStream = await fileHandle.createWritable(); muxerTarget = new FileSystemWritableFileStreamTarget(writableStream);
                 } catch (err) {
                     if (err.name === 'AbortError') {
+                        // 🔥 Ghost Trigger Fix
                         console.log("Export cancelled by user.");
                         isExporting.set(false); 
                         startExportTrigger.set(0);                        
-                        window.removeEventListener('beforeunload', preventClose); return; }
+                        window.removeEventListener('beforeunload', preventClose); return; 
+                    }
                     console.warn("FS API failed:", err); muxerTarget = new ArrayBufferTarget(); 
                 }
             } else { muxerTarget = new ArrayBufferTarget(); }
@@ -400,7 +393,7 @@
             }
             await videoEncoder.configure(videoConfig);
 
-            // Audio Queue (Buffer before Mux)
+            // 🔥 Audio Queue + Encoder
             const audioQueue = [];
             const audioEncoder = new AudioEncoder({ 
                 output: (chunk, meta) => { audioQueue.push({ chunk, meta, timestamp: chunk.timestamp }); },
@@ -410,10 +403,12 @@
 
             exportStatus = "Mixing Audio...";
             const allClips = [...$mainTrackClips, ...$audioTrackClips];
+            // 🔥 Use AUDIO_SR from config
             const mixedBuffer = await mixAllAudio(allClips, durationInSeconds, AUDIO_SR);
             
             if (mixedBuffer) {
                 const left = mixedBuffer.getChannelData(0); const right = mixedBuffer.getChannelData(1);
+                // 🔥 Convert to Int16
                 const interleaved = convertFloat32ToInt16(interleave(left, right));
                 const chunkSize = AUDIO_SR; const totalSamples = mixedBuffer.length;
 
@@ -421,13 +416,14 @@
                     if (audioEncoder.state !== 'configured') { console.warn("Audio encoder closed."); break; }
                     const len = Math.min(chunkSize, totalSamples - i); const chunkData = interleaved.slice(i * 2, (i + len) * 2);
                     const audioData = new AudioData({
-                        format: 's16', sampleRate: AUDIO_SR, numberOfFrames: len, numberOfChannels: 2,
+                        format: 's16', // 🔥 Use s16 format
+                        sampleRate: AUDIO_SR, numberOfFrames: len, numberOfChannels: 2,
                         timestamp: Math.round((i / AUDIO_SR) * 1_000_000), data: chunkData
                     });
                     try { audioEncoder.encode(audioData); } catch(e) { console.warn(e); }
                     audioData.close();
                 }
-                // Safe Flush
+                // Safe flush
                 try { if (audioEncoder.state === 'configured') await audioEncoder.flush(); } catch(e) { console.warn("Audio flush warn:", e); }
             }
 
@@ -497,7 +493,7 @@
                 
                 videoEncoder.encode(frame, { keyFrame });
                 
-                // Interleave Audio
+                // 🔥 Interleave Audio
                 while (audioWriteIndex < audioQueue.length && audioQueue[audioWriteIndex].timestamp <= timestampMicros) {
                     const { chunk, meta } = audioQueue[audioWriteIndex];
                     muxer.addAudioChunk(chunk, meta);
@@ -515,7 +511,9 @@
 
             Object.values(gifCache).forEach(data => data.frames.forEach(f => f.image.close()));
             offscreenVideo.src = ""; offscreenVideo.remove();
-            await videoEncoder.flush(); muxer.finalize();
+
+            await videoEncoder.flush();
+            muxer.finalize();
 
             if (writableStream) { await writableStream.close(); console.log("Stream closed."); } 
             else if (muxerTarget instanceof ArrayBufferTarget) {
@@ -526,7 +524,17 @@
             if (typeof window !== 'undefined') { if (window.gtag) window.gtag('event', 'video_export', { 'event_category': 'engagement', 'event_label': 'duration', 'value': Math.round(durationInSeconds) }); fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'export', filename: activeClip?.name || 'Mixed', duration: durationInSeconds.toFixed(1) }) }).catch(() => {}); }
 
         } catch (err) {
-            console.error(err); alert(`Export Failed: ${err.message}`);
+            // 🔥 Ghost Trigger Fix: Cancel 處理
+            if (err.name === 'AbortError') {
+                console.log("Export cancelled by user.");
+                isExporting.set(false);
+                startExportTrigger.set(0);
+                window.removeEventListener('beforeunload', preventClose);
+                return;
+            }
+
+            console.error(err); 
+            alert(`Export Failed: ${err.message}`);
             if (writableStream) writableStream.close().catch(() => {});
             if (typeof window !== 'undefined') fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'error', filename: currentProcessingClip?.name || "Unknown", errorMessage: err.message }) }).catch(() => {});
             isExporting.set(false); startExportTrigger.set(0);
@@ -534,7 +542,7 @@
     }
 
     // ============================================================
-    // Helper Functions (Consolidated)
+    // Helpers (Includes Audio Fix Logic)
     // ============================================================
 
     function getMediaDuration(file, url) {
@@ -598,13 +606,14 @@
 
     function getSmartBitrate(width, height, fps) {
         const numPixels = width * height;
-        if (numPixels >= 8_294_400) return 80_000_000; // 4K
-        if (numPixels >= 3_686_400) return 40_000_000; // 2K
-        if (numPixels >= 2_073_600) return 18_000_000; // 1080p
-        if (numPixels >= 921_600) return 8_000_000;    // 720p
+        if (numPixels >= 8_294_400) return 80_000_000; 
+        if (numPixels >= 3_686_400) return 40_000_000; 
+        if (numPixels >= 2_073_600) return 18_000_000;
+        if (numPixels >= 921_600) return 8_000_000;
         return 4_000_000;
     }
 
+    // 🔥 Audio Fix: Int16 Convert
     function convertFloat32ToInt16(float32Array) {
         const int16Array = new Int16Array(float32Array.length);
         for (let i = 0; i < float32Array.length; i++) {
