@@ -327,7 +327,9 @@
         throw new Error('No supported audio encoder (AAC/Opus) available.');
     }
 
-    // 2. Main Export Function
+    // ------------------------------------------------
+    // 🔥🔥🔥 Export Logic (UX Fix: Audio Pre-check) 🔥🔥🔥
+    // ------------------------------------------------
     async function fastExportProcess() {
         const preventClose = (e) => { e.preventDefault(); e.returnValue = ''; };
         window.addEventListener('beforeunload', preventClose);
@@ -340,48 +342,112 @@
         offscreenVideo.crossOrigin = "anonymous"; offscreenVideo.muted = true; offscreenVideo.playsInline = true; offscreenVideo.preload = 'auto';
 
         try {
-            isExporting.set(true); isPlaying.set(false); if (videoRef) videoRef.pause(); if (audioRef) audioRef.pause();
-            exportProgress = 0; exportStatus = "Initializing..."; estimatedTimeText = "Calculating..."; exportStartTime = Date.now(); 
-            if (typeof window !== 'undefined') fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'export_start', filename: 'Exporting...', duration: contentDuration.toFixed(1) }) }).catch(() => {});
+            // 0. 狀態初始化
+            isExporting.set(true); 
+            isPlaying.set(false); 
+            if (videoRef) videoRef.pause(); 
+            if (audioRef) audioRef.pause();
+            
+            exportProgress = 0; 
+            exportStatus = "Checking Compatibility..."; // 改狀態文字
+            estimatedTimeText = "Checking..."; 
+            exportStartTime = Date.now(); 
 
+            // =========================================================
+            // 🔥🔥🔥 關鍵修改 1：最優先檢查音訊支援度 (Audio Pre-check) 🔥🔥🔥
+            // =========================================================
+            let audioConfigData = null;
+            let hasAudioSupport = false;
+
+            try {
+                const config = await chooseAudioEncoderConfig();
+                // 如果成功拿到 config，代表支援
+                audioConfigData = config;
+                hasAudioSupport = true;
+            } catch (e) {
+                // 抓不到支援的編碼器
+                hasAudioSupport = false;
+            }
+
+            // 如果不支援音訊，立刻詢問用戶 (Fail Early)
+            if (!hasAudioSupport) {
+                // 暫停 Loading 狀態讓用戶看清楚 Alert
+                const proceed = confirm(
+                    `⚠️ Audio Encoding Not Supported!\n\n` +
+                    `Your browser cannot encode audio (AAC/Opus).\n` +
+                    `The exported video will be MUTED (No Sound).\n\n` +
+                    `Recommendation: Please use Google Chrome or Edge on Desktop.\n\n` +
+                    `Do you want to continue exporting (Video Only)?`
+                );
+
+                if (!proceed) {
+                    // 用戶決定不浪費時間
+                    throw new Error("Export cancelled due to missing audio support."); 
+                }
+                // 用戶堅持要匯出，繼續執行
+                console.warn("User chose to proceed without audio.");
+            }
+            // =========================================================
+
+            if (typeof window !== 'undefined') {
+                fetch('/api/discord', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'export_start', filename: 'Exporting...', duration: contentDuration.toFixed(1) })
+                }).catch(() => {});
+            }
+
+            // ... (解析度檢查、安全縮放 保持不變) ...
             let width = $projectSettings.width;
             let height = $projectSettings.height;
-            if (width % 2 !== 0) width -= 1; if (height % 2 !== 0) height -= 1;
+            // 如果解析度大於 4K (約 830萬像素)，強制等比縮小
+            const MAX_PIXELS = 3840 * 2160; 
+            if (width * height > MAX_PIXELS) {
+                const ratio = Math.sqrt(MAX_PIXELS / (width * height));
+                width = Math.floor(width * ratio);
+                height = Math.floor(height * ratio);
+                console.warn(`Resolution too high, downscaling to: ${width}x${height}`);
+            }
+            if (width % 2 !== 0) width -= 1;
+            if (height % 2 !== 0) height -= 1;
             if (width < 2) width = 2; if (height < 2) height = 2;
+            
             console.log(`Exporting with safe resolution: ${width}x${height}`);
 
             const fps = 30;
             const durationInSeconds = contentDuration; 
             const totalFrames = Math.ceil(durationInSeconds * fps);
             
+            // ... (Muxer Target 保持不變) ...
             let muxerTarget;
             if (typeof window.showSaveFilePicker === 'function') {
                 try {
                     fileHandle = await window.showSaveFilePicker({ suggestedName: `fastvideocutter_${Date.now()}.mp4`, types: [{ description: 'MP4 Video', accept: { 'video/mp4': ['.mp4'] } }] });
                     writableStream = await fileHandle.createWritable(); muxerTarget = new FileSystemWritableFileStreamTarget(writableStream);
                 } catch (err) {
-                    if (err.name === 'AbortError') {
-                        // 🔥 Ghost Trigger Fix
-                        console.log("Export cancelled by user.");
-                        isExporting.set(false); 
-                        startExportTrigger.set(0);                        
+                    if (err.name === 'AbortError') { 
+                        // Cancel Fix
+                        isExporting.set(false); startExportTrigger.set(0); 
                         window.removeEventListener('beforeunload', preventClose); return; 
                     }
                     console.warn("FS API failed:", err); muxerTarget = new ArrayBufferTarget(); 
                 }
             } else { muxerTarget = new ArrayBufferTarget(); }
 
-            // Audio & Muxer Setup
-            exportStatus = "Preparing Audio...";
-            const { config: audioConfig, muxerCodec: audioMuxCodec, sampleRate: AUDIO_SR } = await chooseAudioEncoderConfig();
-
+            // 🔥🔥🔥 關鍵修改 2：使用剛才檢查過的結果設定 Muxer 🔥🔥🔥
             const muxer = new Muxer({
                 target: muxerTarget,
                 video: { codec: 'avc', width, height },
-                audio: { codec: audioMuxCodec, numberOfChannels: 2, sampleRate: AUDIO_SR },
+                // 如果 hasAudioSupport 為 true，才設定 audio，否則 undefined
+                audio: hasAudioSupport ? { 
+                    codec: audioConfigData.muxerCodec, 
+                    numberOfChannels: 2, 
+                    sampleRate: audioConfigData.sampleRate 
+                } : undefined,
                 fastStart: muxerTarget instanceof ArrayBufferTarget ? false : 'in-memory', 
             });
 
+            // ... (Video Encoder 設定 保持不變) ...
             const videoEncoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => { throw e; } });
             const targetBitrate = getSmartBitrate(width, height, fps);
             let codecString = 'avc1.64002a'; if (width > 1920 || height > 1080) codecString = 'avc1.640033'; 
@@ -393,40 +459,50 @@
             }
             await videoEncoder.configure(videoConfig);
 
-            // 🔥 Audio Queue + Encoder
+            // 🔥🔥🔥 關鍵修改 3：Audio Encoder 初始化與處理 🔥🔥🔥
+            // 只有在支援時才初始化 AudioEncoder
             const audioQueue = [];
-            const audioEncoder = new AudioEncoder({ 
-                output: (chunk, meta) => { audioQueue.push({ chunk, meta, timestamp: chunk.timestamp }); },
-                error: (e) => console.error("Audio Error:", e)
-            });
-            audioEncoder.configure(audioConfig);
+            let audioEncoder = null;
 
-            exportStatus = "Mixing Audio...";
-            const allClips = [...$mainTrackClips, ...$audioTrackClips];
-            // 🔥 Use AUDIO_SR from config
-            const mixedBuffer = await mixAllAudio(allClips, durationInSeconds, AUDIO_SR);
-            
-            if (mixedBuffer) {
-                const left = mixedBuffer.getChannelData(0); const right = mixedBuffer.getChannelData(1);
-                // 🔥 Convert to Int16
-                const interleaved = convertFloat32ToInt16(interleave(left, right));
-                const chunkSize = AUDIO_SR; const totalSamples = mixedBuffer.length;
+            if (hasAudioSupport) {
+                audioEncoder = new AudioEncoder({ 
+                    output: (chunk, meta) => { audioQueue.push({ chunk, meta, timestamp: chunk.timestamp }); },
+                    error: (e) => console.error("Audio Error:", e)
+                });
+                audioEncoder.configure(audioConfigData.config);
+                
+                exportStatus = "Processing Audio...";
+                const allClips = [...$mainTrackClips, ...$audioTrackClips];
+                const mixedBuffer = await mixAllAudio(allClips, durationInSeconds, audioConfigData.sampleRate);
+                
+                if (mixedBuffer) {
+                    const left = mixedBuffer.getChannelData(0); const right = mixedBuffer.getChannelData(1);
+                    const interleaved = convertFloat32ToInt16(interleave(left, right));
+                    const chunkSize = audioConfigData.sampleRate; 
+                    const totalSamples = mixedBuffer.length;
 
-                for (let i = 0; i < totalSamples; i += chunkSize) {
-                    if (audioEncoder.state !== 'configured') { console.warn("Audio encoder closed."); break; }
-                    const len = Math.min(chunkSize, totalSamples - i); const chunkData = interleaved.slice(i * 2, (i + len) * 2);
-                    const audioData = new AudioData({
-                        format: 's16', // 🔥 Use s16 format
-                        sampleRate: AUDIO_SR, numberOfFrames: len, numberOfChannels: 2,
-                        timestamp: Math.round((i / AUDIO_SR) * 1_000_000), data: chunkData
-                    });
-                    try { audioEncoder.encode(audioData); } catch(e) { console.warn(e); }
-                    audioData.close();
+                    for (let i = 0; i < totalSamples; i += chunkSize) {
+                        if (audioEncoder.state !== 'configured') { console.warn("Audio encoder closed."); break; }
+                        const len = Math.min(chunkSize, totalSamples - i); const chunkData = interleaved.slice(i * 2, (i + len) * 2);
+                        const audioData = new AudioData({
+                            format: 's16', 
+                            sampleRate: audioConfigData.sampleRate, 
+                            numberOfFrames: len, 
+                            numberOfChannels: 2,
+                            timestamp: Math.round((i / audioConfigData.sampleRate) * 1_000_000), 
+                            data: chunkData
+                        });
+                        try { audioEncoder.encode(audioData); } catch(e) { console.warn(e); }
+                        audioData.close();
+                    }
+                    try { if (audioEncoder.state === 'configured') await audioEncoder.flush(); } catch(e) { console.warn("Audio flush warn:", e); }
                 }
-                // Safe flush
-                try { if (audioEncoder.state === 'configured') await audioEncoder.flush(); } catch(e) { console.warn("Audio flush warn:", e); }
+            } else {
+                console.log("Skipping audio processing (Not supported).");
             }
+            // =========================================================
 
+            // ... (GIF, Rendering Loop 保持不變) ...
             exportStatus = "Decoding GIFs...";
             const gifCache = {}; const imageClips = $mainTrackClips.filter(c => c.type === 'image/gif');
             for (const clip of imageClips) { try { const decoded = await decodeGifFrames(clip.fileUrl); gifCache[clip.id] = decoded; } catch (e) { } }
@@ -450,6 +526,7 @@
 
                 ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
 
+                // ... (繪圖邏輯保持不變) ...
                 if (activeClip) {
                     let sourceElement = null; let sw, sh;
                     if (activeClip.type === 'image/gif' && gifCache[activeClip.id]) {
@@ -493,20 +570,24 @@
                 
                 videoEncoder.encode(frame, { keyFrame });
                 
-                // 🔥 Interleave Audio
-                while (audioWriteIndex < audioQueue.length && audioQueue[audioWriteIndex].timestamp <= timestampMicros) {
-                    const { chunk, meta } = audioQueue[audioWriteIndex];
-                    muxer.addAudioChunk(chunk, meta);
-                    audioWriteIndex++;
+                // Interleave Audio (Only if audio exists)
+                if (hasAudioSupport) {
+                    while (audioWriteIndex < audioQueue.length && audioQueue[audioWriteIndex].timestamp <= timestampMicros) {
+                        const { chunk, meta } = audioQueue[audioWriteIndex];
+                        muxer.addAudioChunk(chunk, meta);
+                        audioWriteIndex++;
+                    }
                 }
                 frame.close();
             }
 
             // Remaining audio
-            while (audioWriteIndex < audioQueue.length) {
-                const { chunk, meta } = audioQueue[audioWriteIndex];
-                muxer.addAudioChunk(chunk, meta);
-                audioWriteIndex++;
+            if (hasAudioSupport) {
+                while (audioWriteIndex < audioQueue.length) {
+                    const { chunk, meta } = audioQueue[audioWriteIndex];
+                    muxer.addAudioChunk(chunk, meta);
+                    audioWriteIndex++;
+                }
             }
 
             Object.values(gifCache).forEach(data => data.frames.forEach(f => f.image.close()));
@@ -524,16 +605,10 @@
             if (typeof window !== 'undefined') { if (window.gtag) window.gtag('event', 'video_export', { 'event_category': 'engagement', 'event_label': 'duration', 'value': Math.round(durationInSeconds) }); fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'export', filename: activeClip?.name || 'Mixed', duration: durationInSeconds.toFixed(1) }) }).catch(() => {}); }
 
         } catch (err) {
-            // 🔥 Ghost Trigger Fix: Cancel 處理
-            if (err.name === 'AbortError') {
-                console.log("Export cancelled by user.");
-                isExporting.set(false);
-                startExportTrigger.set(0);
-                window.removeEventListener('beforeunload', preventClose);
-                return;
-            }
-
             console.error(err); 
+            // 如果是 AbortError，不彈 Alert，直接靜默結束
+            if (err.name === 'AbortError') return;
+
             alert(`Export Failed: ${err.message}`);
             if (writableStream) writableStream.close().catch(() => {});
             if (typeof window !== 'undefined') fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'error', filename: currentProcessingClip?.name || "Unknown", errorMessage: err.message }) }).catch(() => {});
