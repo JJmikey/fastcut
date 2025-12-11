@@ -373,10 +373,54 @@
                     </div>
                 {/if}
 
-                <!-- Delete -->
-                <div class="pt-4 border-t border-gray-700">
-                    <button on:click={handleDelete} class="w-full py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 rounded text-sm transition-colors flex items-center justify-center gap-2">Delete {isMultiSelection ? 'Selected' : 'Clip'}</button>
+                
+
+                  <!-- 🔥🔥🔥 通用動畫控制區 (Animation) 🔥🔥🔥 -->
+        {#if selectedClip && !isMultiSelection}
+        <div class="space-y-4 border-t border-gray-700 pt-4">
+            <span class="text-xs text-gray-500 uppercase font-bold tracking-wider">Animations</span>
+            
+            <!-- Enter Animation -->
+            <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                    <label class="text-xs text-green-400 font-bold">In (Enter)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="number" min="0.1" max="5" step="0.1" value={selectedClip.animInDuration || 1.0} on:focus={saveSnapshot} on:input={(e) => updateProperty('animInDuration', parseFloat(e.target.value))} class="w-10 bg-[#2a2a2a] text-center text-xs rounded border border-gray-600 px-1 outline-none">
+                        <span class="text-[10px] text-gray-500">sec</span>
+                    </div>
                 </div>
+                <select value={selectedClip.animIn || 'none'} on:mousedown={saveSnapshot} on:change={(e) => updateProperty('animIn', e.target.value)} class="w-full bg-[#2a2a2a] border border-gray-600 rounded p-1 text-sm text-white focus:border-cyan-500 outline-none">
+                    <option value="none">None</option>
+                    <option value="fade">Fade In</option>
+                    <option value="zoom">Zoom In</option>
+                </select>
+            </div>
+
+            <!-- Exit Animation -->
+            <div class="space-y-2">
+                <div class="flex justify-between items-center">
+                    <label class="text-xs text-red-400 font-bold">Out (Exit)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="number" min="0.1" max="5" step="0.1" value={selectedClip.animOutDuration || 1.0} on:focus={saveSnapshot} on:input={(e) => updateProperty('animOutDuration', parseFloat(e.target.value))} class="w-10 bg-[#2a2a2a] text-center text-xs rounded border border-gray-600 px-1 outline-none">
+                        <span class="text-[10px] text-gray-500">sec</span>
+                    </div>
+                </div>
+                <select value={selectedClip.animOut || 'none'} on:mousedown={saveSnapshot} on:change={(e) => updateProperty('animOut', e.target.value)} class="w-full bg-[#2a2a2a] border border-gray-600 rounded p-1 text-sm text-white focus:border-cyan-500 outline-none">
+                    <option value="none">None</option>
+                    <option value="fade">Fade Out</option>
+                    <option value="zoom">Zoom Out</option>
+                </select>
+            </div>
+        </div>
+    {/if}
+
+
+            <!-- Delete -->
+            <div class="pt-4 border-t border-gray-700">
+                <button on:click={handleDelete} class="w-full py-2 bg-red-900/30 hover:bg-red-900/50 text-red-400 border border-red-900/50 rounded text-sm transition-colors flex items-center justify-center gap-2">Delete {isMultiSelection ? 'Selected' : 'Clip'}</button>
+            </div>
+
+
             </div>
         {/if}
     </div>

@@ -33,7 +33,13 @@ export const createClip = (fileData, startOffset, rawFile = null) => ({
     // Transform
     scale: 1.0,
     positionX: 0,
-    positionY: 0
+    positionY: 0,
+
+    // 🔥 新增動畫屬性
+    animIn: 'none',          // 'none', 'fade', 'zoom'
+    animInDuration: 1.0,     // 進場秒數
+    animOut: 'none',         // 'none', 'fade', 'zoom'
+    animOutDuration: 1.0     // 退場秒數
 });
 
     // Helper: 建立文字 Clip
@@ -58,7 +64,12 @@ export const createClip = (fileData, startOffset, rawFile = null) => ({
         showBackground: true,      // 是否顯示背景
         backgroundColor: '#00000080', // 黑色 + 50% 透明度 (80是Hex的透明度)
         strokeWidth: 0,             // 描邊寬度 (0 代表無)
-        strokeColor: '#000000'      // 描邊顏色
+        strokeColor: '#000000' ,     // 描邊顏色
+        // 🔥 文字也要有動畫
+        animIn: 'none',
+        animInDuration: 1.0,
+        animOut: 'none',
+        animOutDuration: 1.0
     });
     
 
