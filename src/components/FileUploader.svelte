@@ -1,18 +1,22 @@
 <script>
+    import { onMount } from 'svelte'; // 🔥 確保引入 onMount
     import { currentVideoSource } from '../stores/playerStore';
     // 引入 Stores
     import { draggedFile, uploadedFiles, textTrackClips, createTextClip, resolveOverlaps, projectSettings, mainTrackClips, audioTrackClips } from '../stores/timelineStore';
+    // 引入 History Store
     import { addToHistory } from '../stores/historyStore';
+    // 🔥 引入 Bridge (為了接收 Landing Page 的檔案)
+    import { getPendingFile } from '../utils/fileBridge';
     
     // 引入工具函式
     import { generateThumbnails } from '../utils/thumbnailGenerator';
     import { generateWaveform } from '../utils/waveformGenerator'; 
-    import { parseSRT } from '../utils/srtParser'; // 🔥 新增
-    import { generateId } from '../stores/timelineStore'; // 🔥 需要用到 generateId
+    import { parseSRT } from '../utils/srtParser'; 
+    import { generateId } from '../stores/timelineStore'; 
     import { get } from 'svelte/store';
     
     let fileInput;
-    let srtInput; // 🔥 新增 SRT 專用 Input
+    let srtInput; 
     let isProcessing = false;
     let activeFilter = 'all'; 
     let activeTab = 'media';
@@ -22,93 +26,29 @@
         fileInput.click(); 
     }
 
-    // 🔥🔥🔥 修復：加入覆蓋/合併詢問邏輯 🔥🔥🔥
-    async function handleSRTUpload(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // 1. 讀取與解析
-        const text = await file.text();
-        const subtitles = parseSRT(text);
-        
-        if (subtitles.length === 0) {
-            alert("No valid subtitles found in this file.");
-            e.target.value = ''; // Reset input
-            return;
+    // 🔥🔥🔥 補回：接收 Landing Page 傳來的檔案 🔥🔥🔥
+    onMount(async () => {
+        try {
+            const pendingFile = await getPendingFile();
+            if (pendingFile) {
+                console.log("Found pending file from Landing Page:", pendingFile.name);
+                
+                // 模擬一個 input change event
+                const fakeEvent = {
+                    target: {
+                        files: [pendingFile]
+                    }
+                };
+                
+                // 自動執行上傳流程 (這會觸發自動解析度 + 自動上軌)
+                await handleFileChange(fakeEvent);
+            }
+        } catch (e) {
+            console.error("Failed to load pending file:", e);
         }
+    });
+    // 🔥🔥🔥 結束補回 🔥🔥🔥
 
-        // 2. 轉換為 Clips
-        const newTextClips = subtitles.map(sub => ({
-            id: generateId(),
-            type: 'text',
-            name: 'Subtitle',
-            startOffset: sub.start,
-            duration: sub.duration,
-            sourceDuration: Infinity,
-            mediaStartOffset: 0,
-            text: sub.text,
-            fontSize: 36,
-            color: '#ffffff',
-            fontWeight: 'bold',
-            fontFamily: 'Arial, sans-serif',
-            x: 50,
-            y: 90, // 底部置中
-            showBackground: true,
-            backgroundColor: '#00000099',
-            strokeWidth: 0,
-            strokeColor: '#000000',
-            volume: 1.0
-        }));
-
-        // 3. 衝突檢查 (Conflict Check)
-        const currentTexts = get(textTrackClips);
-        let shouldClearOld = false;
-
-        if (currentTexts.length > 0) {
-            // 如果軌道上已經有東西，詢問用戶
-            shouldClearOld = confirm(
-                `Text track is not empty (${currentTexts.length} items).\n\n` +
-                `Do you want to CLEAR existing text before importing subtitles?\n` +
-                `(Click 'Cancel' to keep existing text and overlap)`
-            );
-        }
-
-        // 4. 執行操作 (含 Undo)
-        addToHistory(); // 存檔
-
-        if (shouldClearOld) {
-            // 模式 A: 取代 (Replace) - 這是最乾淨的做法
-            textTrackClips.set(newTextClips);
-            console.log("Cleared old text and imported SRT.");
-        } else {
-            // 模式 B: 疊加 (Append) - 適合想保留 Logo 或浮水印的情況
-            textTrackClips.update(current => [...current, ...newTextClips]);
-            console.log("Appended SRT to existing text.");
-        }
-        
-        // 🔥🔥🔥 新增：Discord 通知邏輯 🔥🔥🔥
-        if (typeof window !== 'undefined') {
-            fetch('/api/discord', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    type: 'import', // 重用 import 類型，顯示藍色
-                    // 在檔名前加 Emoji 方便辨識
-                    filename: `📜 SRT: ${file.name}`, 
-                    // 這裡的 fileCount 借用來顯示「字幕行數」
-                    fileCount: subtitles.length, 
-                    // 字幕檔通常不計算總時長，傳 0 即可
-                    duration: 0 
-                })
-            }).catch(err => console.warn("SRT webhook failed", err));
-        }
-        // 🔥🔥🔥 結束新增 🔥🔥🔥
-
-
-        alert(`Successfully imported ${newTextClips.length} subtitles!`);
-        e.target.value = ''; // Reset input
-    }
-  
     // Helper: 一次取得 時間 + 寬 + 高
     function getMediaInfo(file, url) {
       return new Promise((resolve) => {
@@ -209,8 +149,9 @@
   
     // 處理檔案上傳
     async function handleFileChange(e) {
-      const newRawFiles = Array.from(e.target.files);
-      if (newRawFiles.length === 0) return;
+      // 支援 FileList (input) 或 Array (fakeEvent)
+      const newRawFiles = e.target.files ? Array.from(e.target.files) : e.target.files;
+      if (!newRawFiles || newRawFiles.length === 0) return;
   
       isProcessing = true;
   
@@ -222,6 +163,7 @@
               }
   
               const url = URL.createObjectURL(file);
+              
               const info = await getMediaInfo(file, url);
               
               if (!info) return null;
@@ -325,7 +267,8 @@
             }).catch(e => console.warn("Webhook failed", e));
         }
 
-          e.target.value = '';
+          // 如果 input 存在才重置 (因為從 Landing Page 進來時，e.target 可能是 fake event)
+          if (fileInput) fileInput.value = '';
           activeFilter = 'all'; 
   
       } catch (error) {
@@ -375,6 +318,79 @@
         });
     }
   
+    // 處理 SRT 上傳
+    async function handleSRTUpload(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const text = await file.text();
+        const subtitles = parseSRT(text);
+        
+        if (subtitles.length === 0) {
+            alert("No valid subtitles found in this file.");
+            e.target.value = ''; 
+            return;
+        }
+
+        const newTextClips = subtitles.map(sub => ({
+            id: generateId(),
+            type: 'text',
+            name: 'Subtitle',
+            startOffset: sub.start,
+            duration: sub.duration,
+            sourceDuration: Infinity,
+            mediaStartOffset: 0,
+            text: sub.text,
+            fontSize: 36,
+            color: '#ffffff',
+            fontWeight: 'bold',
+            fontFamily: 'Arial, sans-serif',
+            x: 50,
+            y: 90, 
+            showBackground: true,
+            backgroundColor: '#00000099',
+            strokeWidth: 0,
+            strokeColor: '#000000',
+            volume: 1.0
+        }));
+
+        const currentTexts = get(textTrackClips);
+        let shouldClearOld = false;
+
+        if (currentTexts.length > 0) {
+            shouldClearOld = confirm(
+                `Text track is not empty (${currentTexts.length} items).\n\n` +
+                `Do you want to CLEAR existing text before importing subtitles?\n` +
+                `(Click 'Cancel' to keep existing text and overlap)`
+            );
+        }
+
+        addToHistory(); 
+
+        if (shouldClearOld) {
+            textTrackClips.set(newTextClips);
+        } else {
+            textTrackClips.update(current => [...current, ...newTextClips]);
+        }
+        
+        if (typeof window !== 'undefined') {
+            fetch('/api/discord', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'import',
+                    filename: `📜 SRT: ${file.name}`, 
+                    fileCount: subtitles.length, 
+                    duration: 0 
+                })
+            }).catch(err => console.warn("SRT webhook failed", err));
+        }
+
+        alert(`Successfully imported ${newTextClips.length} subtitles!`);
+        e.target.value = ''; 
+    }
+
+    // 加入預設文字
     function addTextToTimeline() {
         addToHistory();
         const clips = get(textTrackClips);
@@ -400,14 +416,13 @@
   </script>
   
   <div class="flex flex-col h-full">
-      <!-- Tabs -->
       <div class="flex border-b border-gray-700 mb-4 shrink-0">
           <button class="flex-1 py-3 text-sm font-medium {activeTab === 'media' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-[#252525]' : 'text-gray-400 hover:text-gray-200'}" on:click={() => activeTab = 'media'}>Media</button>
           <button class="flex-1 py-3 text-sm font-medium {activeTab === 'text' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-[#252525]' : 'text-gray-400 hover:text-gray-200'}" on:click={() => activeTab = 'text'}>Text</button>
       </div>
   
-      <!-- Media Tab -->
       {#if activeTab === 'media'}
+          
           <div class="shrink-0 mb-4">
               <button 
                   on:click={handleClick} 
@@ -424,14 +439,14 @@
               </button>
               <input id="global-file-input" bind:this={fileInput} type="file" class="hidden" multiple accept="image/*,video/*,audio/*,.mov,.mkv" on:change={handleFileChange} />
           </div>
-          <!-- (... Grid Layout 保持不變 ...) -->
+          
           <div class="flex items-center gap-2 mb-2 shrink-0 overflow-x-auto no-scrollbar pb-1">
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'all' ? 'bg-gray-200 text-black border-gray-200' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'all'}>All ({safeFiles.length})</button>
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'video' ? 'bg-cyan-900 text-cyan-400 border-cyan-500' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'video'}>Video ({countVideo})</button>
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'audio' ? 'bg-green-900 text-green-400 border-green-500' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'audio'}>Audio ({countAudio})</button>
               <button class="px-3 py-1 rounded-full text-[10px] font-medium border transition-colors whitespace-nowrap {activeFilter === 'image' ? 'bg-purple-900 text-purple-400 border-purple-500' : 'bg-transparent text-gray-400 border-gray-600 hover:border-gray-400'}" on:click={() => activeFilter = 'image'}>Image ({countImage})</button>
           </div>
-          
+  
           {#if filteredFiles.length > 0}
               <div class="grid grid-cols-2 gap-2 overflow-y-auto flex-1 pr-1 custom-scrollbar content-start">
                   {#each filteredFiles as file}
@@ -470,18 +485,16 @@
               <div class="flex-1 flex flex-col items-center justify-center text-gray-600 gap-2"><p class="text-xs">No {activeFilter !== 'all' ? activeFilter : ''} files</p></div>
           {/if}
   
-      <!-- Text Tab with SRT Upload -->
       {:else if activeTab === 'text'}
           <div class="flex flex-col gap-4 p-2">
               <button on:click={addTextToTimeline} class="w-full py-3 bg-cyan-900/50 hover:bg-cyan-900/80 text-cyan-400 border border-cyan-700 rounded text-sm transition-colors flex items-center justify-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Add Default Text</button>
               
-              <!-- 🔥🔥🔥 新增：Upload SRT Button 🔥🔥🔥 -->
+              <!-- SRT Upload Button -->
               <button on:click={() => srtInput.click()} class="w-full py-3 bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 rounded text-sm transition-colors flex items-center justify-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                   Import Subtitles (.srt)
               </button>
               <input bind:this={srtInput} type="file" accept=".srt" class="hidden" on:change={handleSRTUpload} />
-              <!-- 🔥🔥🔥 結束新增 🔥🔥🔥 -->
 
               <div class="text-xs text-gray-500 text-center mt-4">Click button to add text layer.<br>Or upload .srt file to auto-generate captions.</div>
           </div>
