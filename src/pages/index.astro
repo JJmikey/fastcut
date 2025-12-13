@@ -1,15 +1,16 @@
 ---
 import MarketingLayout from '../layouts/MarketingLayout.astro';
 
+// Top Features (保持不變)
 const features = [
   {
     title: "Next-Gen WebCodecs",
-    desc: "Built on the absolute bleeding edge of browser technology. We use native GPU acceleration to render video instantly, bypassing slow server processing.",
+    desc: "Built on the absolute bleeding edge of browser technology. We use native GPU acceleration to render video instantly.",
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-cyan-400"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 9h6"/><path d="M9 15h6"/><path d="M15 9v6"/><path d="M9 9v6"/><path d="M3 9h-2"/><path d="M3 15h-2"/><path d="M21 9h2"/><path d="M21 15h2"/><path d="M9 3v-2"/><path d="M15 3v-2"/><path d="M9 21v2"/><path d="M15 21v2"/></svg>`
   },
   {
     title: "Local Privacy",
-    desc: "Your videos are processed locally in your browser via WebCodecs. Sensitive footage never hits a server.",
+    desc: "Your videos are processed locally in your browser. Sensitive footage never hits a server.",
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`
   },
   {
@@ -17,6 +18,35 @@ const features = [
     desc: "Export as MP4 and share immediately to TikTok, YouTube, or Instagram. No watermarks.",
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`
   }
+];
+
+// Key Benefits (右側卡片資料)
+const benefitsList = [
+  {
+    title: "Zero Upload Time",
+    desc: "Since files stay on your computer, editing starts immediately. No waiting for gigabytes to upload.",
+    number: "1"
+  },
+  {
+    title: "100% Security",
+    desc: "Your personal or confidential footage is never exposed to the cloud. It never leaves your device.",
+    number: "2"
+  },
+  {
+    title: "High Performance",
+    desc: "Utilizes your computer's GPU (WebCodecs) for smooth preview and lightning-fast rendering.",
+    number: "3"
+  }
+];
+
+// Supported Features (保持在下方)
+const supportedFeaturesList = [
+  "Video Trimming & Splitting",
+  "Multi-track Editing (Video/Audio/Text)",
+  "Add Background Music (MP3/WAV)",
+  "Add Text & Subtitles with Styles",
+  "Volume Control & Audio Mixing",
+  "Frame-by-Frame Precision"
 ];
 ---
 
@@ -28,28 +58,97 @@ const features = [
   features={features}
 >
   
-  <!-- 針對首頁的 SEO 內容 (Below the fold) -->
-  <h2 class="text-2xl font-bold text-white mt-8 mb-4">Why use FastVideoCutter?</h2>
-  <p class="text-gray-400 mb-6">
-    Traditional online video editors force you to upload your large video files to their servers, which can take hours depending on your internet speed. 
-    <strong>FastVideoCutter</strong> solves this problem by using advanced browser technologies (WebCodecs & WebAssembly) to process your video 
-    directly on your device.
-  </p>
+  <!-- 下方內容區域 -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
+    
+    <!-- 🔥🔥🔥 核心修改：大圓角深色容器 (仿照圖 2) 🔥🔥🔥 -->
+    <div class="bg-[#0B1121] border border-slate-800 rounded-[2.5rem] p-8 md:p-16 relative overflow-hidden shadow-2xl">
+      
+      <!-- 背景裝飾光暈 (可選) -->
+      <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-900/20 rounded-full blur-[120px] pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
 
-  <h3 class="text-xl font-bold text-white mt-8 mb-4">Key Benefits</h3>
-  <ul class="list-disc pl-5 text-gray-400 space-y-2">
-    <li><strong>Zero Upload Time:</strong> Since files stay on your computer, editing starts immediately.</li>
-    <li><strong>Security:</strong> Your personal or confidential footage is never exposed to the cloud.</li>
-    <li><strong>High Performance:</strong> Utilizes your computer's GPU for smooth preview and fast rendering.</li>
-  </ul>
+      <div class="grid lg:grid-cols-2 gap-12 lg:gap-20 relative z-10">
+        
+        <!-- LEFT COLUMN: 文字介紹 (對應圖 2 左側) -->
+        <div class="flex flex-col justify-center">
+          
+          <!-- 小標籤 -->
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 w-fit mb-6">
+             <span class="flex h-2 w-2 relative">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+             </span>
+             <span class="text-xs font-bold text-indigo-300 tracking-wide uppercase">Why FastVideoCutter?</span>
+          </div>
 
-  <h3 class="text-xl font-bold text-white mt-8 mb-4">Supported Features</h3>
-  <ul class="list-disc pl-5 text-gray-400 space-y-2">
-    <li>Video Trimming & Splitting</li>
-    <li>Multi-track Editing (Video + Audio + Text)</li>
-    <li>Add Background Music (MP3/WAV)</li>
-    <li>Add Text & Subtitles with Custom Styles</li>
-    <li>Volume Control & Audio Mixing</li>
-  </ul>
+          <!-- 大標題 -->
+          <h2 class="text-4xl md:text-5xl font-extrabold text-white mb-6 leading-tight">
+            Stop waiting for <br/>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">uploads to finish.</span>
+          </h2>
+
+          <!-- 敘述文字 -->
+          <p class="text-lg text-slate-400 leading-relaxed mb-8">
+            Traditional online video editors force you to upload your large video files to their servers, which can take hours depending on your internet speed.
+            <br/><br/>
+            <strong>FastVideoCutter</strong> solves this problem by using advanced browser technologies to process your video directly on your device.
+          </p>
+
+          <!-- 裝飾性按鈕或連結 -->
+          <div>
+            <a href="/editor" class="inline-flex items-center justify-center px-6 py-3 text-base font-medium text-white bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 hover:text-cyan-300 transition-all duration-200">
+              Try it securely now &rarr;
+            </a>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: 卡片堆疊 (對應圖 2 右側) -->
+        <div class="flex flex-col gap-4 justify-center">
+          {benefitsList.map((item) => (
+            <div class="group bg-[#131B2E] hover:bg-[#1A2339] border border-slate-800/60 p-6 rounded-2xl transition-all duration-300 flex gap-5 items-start relative overflow-hidden">
+              
+              <!-- Hover Glow Effect -->
+              <div class="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+
+              <!-- Number Badge (仿圖 2 的紫色圓/方塊) -->
+              <div class="shrink-0 w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold text-sm border border-indigo-500/30 mt-1">
+                {item.number}
+              </div>
+
+              <!-- Text Content -->
+              <div class="relative z-10">
+                <h3 class="text-xl font-bold text-white mb-2 group-hover:text-indigo-200 transition-colors">
+                  {item.title}
+                </h3>
+                <p class="text-slate-400 text-sm leading-relaxed">
+                  {item.desc}
+                </p>
+              </div>
+
+            </div>
+          ))}
+        </div>
+
+      </div>
+    </div>
+    
+    <!-- Supported Features (單獨放在下方，作為補充) -->
+    <div class="mt-24">
+      <div class="text-center mb-12">
+        <h3 class="text-3xl font-bold text-white">Supported Features</h3>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        {supportedFeaturesList.map((feature) => (
+          <div class="flex items-center gap-3 bg-slate-900/50 border border-slate-800 p-4 rounded-xl">
+            <div class="shrink-0 w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <span class="text-slate-300 font-medium text-sm">{feature}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+
+  </div>
 
 </MarketingLayout>

@@ -7,6 +7,9 @@
     import { Muxer, ArrayBufferTarget, FileSystemWritableFileStreamTarget } from 'mp4-muxer';
     import { get } from 'svelte/store';
     
+    // 🔥 引入 GSAP
+    import { gsap } from 'gsap/dist/gsap.js';
+    
     // Utils
     import { decodeGifFrames } from '../utils/gifHelper';
     import { generateThumbnails } from '../utils/thumbnailGenerator';
@@ -21,7 +24,6 @@
     let containerWidth = 0;
     let lastTime = 0;
     
-    // Export UI 變數
     let exportProgress = 0;
     let exportStatus = "";
     let estimatedTimeText = ""; 
@@ -29,7 +31,6 @@
     
     let isProcessingDrag = false;
 
-    // 防止重新整理後的幽靈觸發
     onMount(() => {
         isExporting.set(false);
         startExportTrigger.set(0);
@@ -81,7 +82,6 @@
                     if ((!$isPlaying || Math.abs(videoRef.currentTime - seekTime) > 0.25) && !videoRef.seeking) {
                         videoRef.currentTime = seekTime;
                     }
-                    // Sync Blur Background Video
                     if ($projectSettings.backgroundMode === 'blur' && bgVideoRef) {
                         if (bgVideoRef.src !== videoRef.src) bgVideoRef.src = videoRef.src;
                         if (Math.abs(bgVideoRef.currentTime - videoRef.currentTime) > 0.1) bgVideoRef.currentTime = videoRef.currentTime;
@@ -89,7 +89,6 @@
                 }
             } else if (isImageType(activeClip.type)) {
                 if (imageRef && !imageRef.src.includes(activeClip.fileUrl)) imageRef.src = activeClip.fileUrl;
-                // Sync Blur Background Image
                 if ($projectSettings.backgroundMode === 'blur' && bgImageRef) {
                      if (bgImageRef.src !== imageRef.src) bgImageRef.src = imageRef.src;
                 }
@@ -162,7 +161,7 @@
     // Helper Functions
     // ============================================================
 
-    // 🔥🔥🔥 動畫計算函數 (重要) 🔥🔥🔥
+    // 🔥🔥🔥 核心：GSAP Powered Animation Calculation 🔥🔥🔥
     function calculateAnimState(clip, currentTime) {
         let opacity = 1;
         let scale = 1;
@@ -171,22 +170,39 @@
         const timeInClip = currentTime - clip.startOffset;
         const timeLeft = (clip.startOffset + clip.duration) - currentTime;
         
-        // Enter
+        // Enter Animation
         if (clip.animIn && clip.animIn !== 'none') {
             const duration = clip.animInDuration || 1.0;
             if (timeInClip < duration) {
-                const progress = Math.max(0, timeInClip / duration);
-                if (clip.animIn === 'fade') opacity = progress;
-                if (clip.animIn === 'zoom') scale = progress; 
+                // 正規化進度 0 -> 1
+                const linearProgress = Math.max(0, timeInClip / duration);
+                
+                if (clip.animIn === 'fade') {
+                    // Fade 使用 Power1 (柔和)
+                    opacity = gsap.parseEase("power1.inOut")(linearProgress);
+                }
+                if (clip.animIn === 'zoom') {
+                    // 🔥 Zoom 使用 Back.out (彈性效果)
+                    // 這會讓物體稍微放大超過 100% 然後彈回來，很像 Promo Video
+                    scale = gsap.parseEase("back.out(1.7)")(linearProgress);
+                }
             }
         }
-        // Exit
+
+        // Exit Animation
         if (clip.animOut && clip.animOut !== 'none') {
             const duration = clip.animOutDuration || 1.0;
             if (timeLeft < duration) {
-                const progress = Math.max(0, timeLeft / duration);
-                if (clip.animOut === 'fade') opacity = Math.min(opacity, progress);
-                if (clip.animOut === 'zoom') scale = Math.min(scale, progress);
+                // 正規化進度 1 -> 0 (因為是退場)
+                const linearProgress = Math.max(0, timeLeft / duration);
+                
+                if (clip.animOut === 'fade') {
+                    opacity = Math.min(opacity, gsap.parseEase("power1.inOut")(linearProgress));
+                }
+                if (clip.animOut === 'zoom') {
+                    // 🔥 Zoom Out 使用 Back.in (預備動作後縮小)
+                    scale = Math.min(scale, gsap.parseEase("back.in(1.7)")(linearProgress));
+                }
             }
         }
         return { opacity, scale };
@@ -254,7 +270,7 @@
 
     function getSmartBitrate(width, height, fps) {
         const numPixels = width * height;
-        if (numPixels >= 8_294_400) return 80_000_000; 
+        if (numPixels >= 8_294_400) return 50_000_000; 
         if (numPixels >= 3_686_400) return 40_000_000; 
         if (numPixels >= 2_073_600) return 18_000_000;
         if (numPixels >= 921_600) return 8_000_000;
@@ -443,6 +459,7 @@
                 const info = await getMediaDuration(file, url);
                 if (!info) return null;
                 const { duration, width, height } = info;
+
                 const DURATION_LIMIT = 1800; 
                 if (duration > DURATION_LIMIT) { if (!confirm(`⚠️ Large File: "${file.name}" > 30 mins.\nProceed?`)) return null; }
                 const thumbnailBlobs = await generateThumbnails(file, duration);
@@ -460,8 +477,7 @@
                 if (firstVideo) {
                     addToHistory();
                     console.log(`[Drag] Auto-set canvas: ${firstVideo.width}x${firstVideo.height}`);
-                    
-                    // 🔥 Ratio Fix: Force Original (解決顯亮問題)
+                    // 🔥 Force Original Ratio
                     projectSettings.update(s => ({ ...s, width: firstVideo.width, height: firstVideo.height, aspectRatio: 'original' }));
                 }
             }
@@ -492,29 +508,23 @@
     }
 
     // ------------------------------------------------
-    // 🔥🔥🔥 Export Logic (Audio + Ratio + Ghost Fix) 🔥🔥🔥
+    // 🔥🔥🔥 Export Logic (Full Integrated) 🔥🔥🔥
     // ------------------------------------------------
     
+    // 1. Audio Config
     async function chooseAudioEncoderConfig() {
         const aac = { codec: 'mp4a.40.2', sampleRate: 44100, numberOfChannels: 2, bitrate: 128_000 };
         try {
             const ok = await AudioEncoder.isConfigSupported(aac);
-            console.log("AAC Support Check:", ok.supported); // 🔥 觀察這個
             if (ok.supported) return { config: aac, muxerCodec: 'aac', sampleRate: 44100 };
-        } catch (e) {
-            console.error("AAC Check Error:", e);
-        }
-
+        } catch (_) {}
         const opus = { codec: 'opus', sampleRate: 48000, numberOfChannels: 2, bitrate: 128_000 };
         try {
             const ok2 = await AudioEncoder.isConfigSupported(opus);
-            console.log("Opus Support Check:", ok2.supported); // 🔥 觀察這個
             if (ok2.supported) return { config: opus, muxerCodec: 'opus', sampleRate: 48000 };
-        } catch (e) {
-            console.error("Opus Check Error:", e);
-        }
-
-        throw new Error('No supported audio encoder (AAC/Opus) available.');
+        } catch (_) {}
+        // Return null if not supported
+        return null;
     }
 
     // 2. Main Export Function
@@ -528,14 +538,34 @@
         
         const offscreenVideo = document.createElement('video');
         offscreenVideo.crossOrigin = "anonymous"; offscreenVideo.muted = true; offscreenVideo.playsInline = true; offscreenVideo.preload = 'auto';
+        let lastVideoDecoderConfig = null;
 
         try {
             isExporting.set(true); isPlaying.set(false); if (videoRef) videoRef.pause(); if (audioRef) audioRef.pause();
             exportProgress = 0; exportStatus = "Initializing..."; estimatedTimeText = "Calculating..."; exportStartTime = Date.now(); 
+            
+            // Audio Pre-check
+            let audioConfigData = null;
+            let hasAudioSupport = false;
+            try {
+                const config = await chooseAudioEncoderConfig();
+                if (config) { audioConfigData = config; hasAudioSupport = true; }
+            } catch(e) { hasAudioSupport = false; }
+            if (!hasAudioSupport) {
+                 const proceed = confirm(`⚠️ Audio Encoding Not Supported!\nYour browser cannot encode audio.\nExport will be MUTED.\n\nContinue?`);
+                 if (!proceed) throw new Error("Export cancelled (No Audio Support).");
+            }
+
             if (typeof window !== 'undefined') fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'export_start', filename: 'Exporting...', duration: contentDuration.toFixed(1) }) }).catch(() => {});
 
             let width = $projectSettings.width;
             let height = $projectSettings.height;
+            const MAX_PIXELS = 3840 * 2160; 
+            if (width * height > MAX_PIXELS) {
+                const ratio = Math.sqrt(MAX_PIXELS / (width * height));
+                width = Math.floor(width * ratio); height = Math.floor(height * ratio);
+                console.warn(`Resolution too high, downscaling to: ${width}x${height}`);
+            }
             if (width % 2 !== 0) width -= 1; if (height % 2 !== 0) height -= 1;
             if (width < 2) width = 2; if (height < 2) height = 2;
             console.log(`Exporting with safe resolution: ${width}x${height}`);
@@ -559,23 +589,6 @@
                 }
             } else { muxerTarget = new ArrayBufferTarget(); }
 
-            // Audio Pre-check
-            let audioConfigData = null;
-            let hasAudioSupport = false;
-            try {
-                const config = await chooseAudioEncoderConfig();
-                if (config) { audioConfigData = config; hasAudioSupport = true; }
-            } catch(e) { hasAudioSupport = false; }
-            if (!hasAudioSupport) {
-                 const proceed = confirm(`⚠️ Audio Encoding Not Supported!\nExport will be MUTED.\n\nContinue?`);
-                 if (!proceed) {
-                     // Cancel Trigger Fix
-                     isExporting.set(false); startExportTrigger.set(0);
-                     window.removeEventListener('beforeunload', preventClose);
-                     return;
-                 }
-            }
-
             const muxer = new Muxer({
                 target: muxerTarget,
                 video: { codec: 'avc', width, height },
@@ -583,13 +596,13 @@
                 fastStart: muxerTarget instanceof ArrayBufferTarget ? false : 'in-memory', 
             });
 
-            let lastVideoDecoderConfig = null;
             const videoEncoder = new VideoEncoder({ 
                 output: (chunk, meta) => {
+                    // Firefox Config Fix
                     if (meta.decoderConfig) lastVideoDecoderConfig = meta.decoderConfig;
                     else if (lastVideoDecoderConfig) meta.decoderConfig = lastVideoDecoderConfig;
                     muxer.addVideoChunk(chunk, meta);
-                },
+                }, 
                 error: (e) => { throw e; } 
             });
             
@@ -623,6 +636,7 @@
                 
                 if (mixedBuffer) {
                     const left = mixedBuffer.getChannelData(0); const right = mixedBuffer.getChannelData(1);
+                    // 🔥 Use Int16 Conversion
                     const interleaved = convertFloat32ToInt16(interleave(left, right));
                     const chunkSize = audioConfigData.sampleRate; 
                     const totalSamples = mixedBuffer.length;
@@ -666,7 +680,7 @@
                 const activeText = $textTrackClips.find(clip => timeInSeconds >= clip.startOffset && timeInSeconds < (clip.startOffset + clip.duration));
                 currentProcessingClip = activeClip;
 
-                // Background Rendering
+                // Background Rendering (Added Background Support)
                 if ($projectSettings.backgroundMode === 'black') { ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, width, height); } 
                 else if ($projectSettings.backgroundMode === 'white') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, width, height); } 
                 else if ($projectSettings.backgroundMode === 'color') { ctx.fillStyle = $projectSettings.backgroundColor || '#000000'; ctx.fillRect(0, 0, width, height); } 
@@ -699,23 +713,27 @@
                     }
                     if (sourceElement && sw && sh) {
                         const r = Math.min(width / sw, height / sh); const dw = Math.round(sw * r); const dh = Math.round(sh * r);
-                        // 🔥 Apply Animation
+                        // 🔥 Apply Animation (GSAP Easing)
                         const anim = calculateAnimState(activeClip, timeInSeconds);
-                        const scale = (activeClip.scale || 1.0) * anim.scale;
+                        const scale = (activeClip.scale || 1.0) * anim.scale; // 記得 || 1.0 防呆
                         const cx = Math.round(width / 2 + (activeClip.positionX || 0)); const cy = Math.round(height / 2 + (activeClip.positionY || 0));
                         ctx.save(); ctx.globalAlpha = anim.opacity; ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.drawImage(sourceElement, -Math.round(dw / 2), -Math.round(dh / 2), dw, dh); ctx.restore();
                     }
                 }
 
                 if (activeText) {
+                    // 🔥 Apply Text Animation
                     const anim = calculateAnimState(activeText, timeInSeconds);
+                    
                     const fontSize = activeText.fontSize; const lineHeight = fontSize * 1.2; const lines = activeText.text.split('\n');
                     ctx.font = `${activeText.fontWeight || 'bold'} ${fontSize}px ${activeText.fontFamily || 'Arial, sans-serif'}`;
                     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; 
                     const x = Math.round((activeText.x / 100) * width); const y = Math.round((activeText.y / 100) * height); const padding = 20;
                     const totalTextHeight = lines.length * lineHeight; const startY = y - (totalTextHeight / 2) + (lineHeight / 2);
 
-                    ctx.save(); ctx.globalAlpha = anim.opacity; ctx.translate(x, y); ctx.scale(anim.scale, anim.scale); ctx.translate(-x, -y);
+                    ctx.save();
+                    ctx.globalAlpha = anim.opacity;
+                    ctx.translate(x, y); ctx.scale(anim.scale, anim.scale); ctx.translate(-x, -y);
 
                     if (activeText.showBackground) {
                         let maxLineWidth = 0; lines.forEach(line => { const m = ctx.measureText(line); if (m.width > maxLineWidth) maxLineWidth = m.width; });
@@ -724,11 +742,13 @@
                     if (activeText.strokeWidth > 0) { ctx.lineJoin = 'round'; ctx.miterLimit = 2; ctx.lineWidth = activeText.strokeWidth; ctx.strokeStyle = activeText.strokeColor; }
                     ctx.fillStyle = activeText.color;
                     lines.forEach((line, index) => { const lineY = startY + (index * lineHeight); if (activeText.strokeWidth > 0) ctx.strokeText(line, x, lineY); ctx.fillText(line, x, lineY); });
+                    
                     ctx.restore();
                 }
 
                 const frame = new VideoFrame(canvasRef, { timestamp: timestampMicros });
                 const keyFrame = i % (fps * 2) === 0; 
+                
                 videoEncoder.encode(frame, { keyFrame });
 
                 if (hasAudioSupport) {
@@ -764,7 +784,6 @@
             if (typeof window !== 'undefined') { if (window.gtag) window.gtag('event', 'video_export', { 'event_category': 'engagement', 'event_label': 'duration', 'value': Math.round(durationInSeconds) }); fetch('/api/discord', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'export', filename: activeClip?.name || 'Mixed', duration: durationInSeconds.toFixed(1) }) }).catch(() => {}); }
 
         } catch (err) {
-            // 🔥 Ghost Trigger Fix
             if (err.name === 'AbortError') { isExporting.set(false); startExportTrigger.set(0); window.removeEventListener('beforeunload', preventClose); return; }
             console.error(err); alert(`Export Failed: ${err.message}`);
             if (writableStream) writableStream.close().catch(() => {});
@@ -785,6 +804,7 @@
                                   $projectSettings.backgroundMode === 'white' ? '#ffffff' : '#000000'};"
         draggable="true" on:dragstart={handleDragStart} on:drop={handlePreviewDrop} on:dragover={handleExternalDragOver} on:click={togglePlay} bind:clientWidth={containerWidth}
     >
+        <!-- Background Blur -->
         {#if $projectSettings.backgroundMode === 'blur' && activeClip && (isVideoType(activeClip.type) || isImageType(activeClip.type))}
             <div class="absolute inset-0 overflow-hidden z-0">
                 {#if isVideoType(activeClip.type)}

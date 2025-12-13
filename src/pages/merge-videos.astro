@@ -5,7 +5,7 @@ const features = [
   {
     title: "Combine Clips",
     desc: "Join multiple video files into one single MP4. Supports MP4, MOV, WebM, and more.",
-    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-400"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>`
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-400"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2-2h3"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>`
   },
   {
     title: "Sequence Editor",
@@ -18,10 +18,41 @@ const features = [
     icon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`
   }
 ];
-// 🔥 定義專屬的 Description (針對 SEO 優化)
+
+// 🔥 定義步驟資料 (紫色系)
+const steps = [
+  {
+    step: "1",
+    title: "Import Media",
+    desc: "Click 'Start Editing' and select all the video clips you want to combine. Supports mixed formats."
+  },
+  {
+    step: "2",
+    title: "Drag & Arrange",
+    desc: "Drag clips onto the Main Track. Drag them left or right to re-order. They snap together automatically."
+  },
+  {
+    step: "3",
+    title: "Add Soundtrack (Optional)",
+    desc: "Upload a background song or voiceover to the Audio Track to tie your clips together."
+  },
+  {
+    step: "4",
+    title: "Export as One",
+    desc: "Click Export to render the final sequence into a single high-quality MP4 file."
+  }
+];
+
+// 🔥 定義左側的亮點小圖示
+const highlights = [
+  { label: "Magnetic Snap", icon: "🧲" },
+  { label: "4K Support", icon: "✨" },
+  { label: "No Uploads", icon: "🔒" },
+  { label: "MP4 / MOV", icon: "🎞️" },
+];
+
 const pageTitle = "Merge Videos Online - Combine MP4 Clips for Free | FastVideoCutter";
 const pageDescription = "Quickly merge and join video clips in your browser. No file upload needed – your video stays private on your device. Works with 4K, MP4, and MOV. Free & No Watermark.";
-
 ---
 
 <MarketingLayout
@@ -33,20 +64,94 @@ const pageDescription = "Quickly merge and join video clips in your browser. No 
   features={features}
 >
 
-  <h2 class="text-2xl font-bold text-white mt-8 mb-4">How to merge videos online?</h2>
-  <p class="text-gray-400 mb-6">
-    Don't waste time uploading huge files just to stitch them together. 
-    <strong>FastVideoCutter</strong> lets you combine unlimited video clips directly in your browser using WebCodecs technology.
-  </p>
+  <!-- Content Block: 紫色主題深色風格 -->
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24">
+    
+    <div class="bg-[#0B1121] border border-slate-800 rounded-[2.5rem] p-8 md:p-16 relative overflow-hidden shadow-2xl">
+      
+      <!-- 背景光暈 (Purple Theme) -->
+      <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-purple-900/20 rounded-full blur-[120px] pointer-events-none -translate-y-1/2 translate-x-1/2"></div>
+      <div class="absolute bottom-0 left-0 w-[400px] h-[400px] bg-pink-900/10 rounded-full blur-[100px] pointer-events-none translate-y-1/3 -translate-x-1/4"></div>
 
-  <h3 class="text-xl font-bold text-white mt-8 mb-4">Step-by-step Guide</h3>
-  <ol class="list-decimal pl-5 text-gray-400 space-y-2">
-    <li>Click <strong>"Start Editing"</strong>.</li>
-    <li>Upload all the video clips you want to merge using the <strong>"Import Media"</strong> button.</li>
-    <li>Drag your clips onto the <strong>Main Track</strong> one by one.</li>
-    <li>Drag clips left or right to <strong>rearrange</strong> their order. They will snap together automatically.</li>
-    <li>(Optional) Add a background song on the Audio Track.</li>
-    <li>Click <strong>Export</strong> to save the combined video as a single MP4 file.</li>
-  </ol>
+      <div class="grid lg:grid-cols-2 gap-16 relative z-10">
+        
+        <!-- LEFT COLUMN: Concept -->
+        <div class="flex flex-col justify-center">
+          
+          <!-- Badge -->
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 w-fit mb-6">
+             <span class="flex h-2 w-2 relative">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
+             </span>
+             <span class="text-xs font-bold text-purple-300 tracking-wide uppercase">Browser-Based Editor</span>
+          </div>
+
+          <h2 class="text-3xl md:text-5xl font-extrabold text-white mb-6 leading-tight">
+            How to  <br/>
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">merge videos online?</span>
+          </h2>
+
+          <p class="text-lg text-slate-400 leading-relaxed mb-8">
+            Don't waste hours uploading huge files just to stitch them together. 
+            <br/><br/>
+            <strong>FastVideoCutter</strong> acts like a magnetic timeline, letting you combine unlimited video clips directly in your browser. Just drag, drop, and snap them into place.
+          </p>
+
+          <!-- Highlights Grid -->
+          <div class="grid grid-cols-2 gap-4">
+            {highlights.map(item => (
+              <div class="flex items-center gap-3 bg-slate-900/60 border border-slate-800/80 p-3 rounded-xl">
+                <span class="text-xl">{item.icon}</span>
+                <span class="font-bold text-slate-300 text-sm">{item.label}</span>
+              </div>
+            ))}
+          </div>
+
+        </div>
+
+        <!-- RIGHT COLUMN: Step Cards -->
+        <div>
+          <h3 class="text-2xl font-bold text-white mb-8 flex items-center gap-3">
+            <span class="w-1.5 h-8 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full"></span>
+            Step-by-step Guide
+          </h3>
+
+          <div class="space-y-4">
+            {steps.map((item) => (
+              <div class="group relative bg-[#131B2E] hover:bg-[#1A2339] border border-slate-800/60 p-5 rounded-2xl transition-all duration-300 flex gap-5 items-start">
+                
+                <!-- Number Badge (Purple Style) -->
+                <div class="shrink-0 w-10 h-10 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center font-bold text-sm border border-purple-500/20 mt-0.5 shadow-sm shadow-purple-500/10">
+                  {item.step}
+                </div>
+
+                <!-- Text Content -->
+                <div>
+                  <h4 class="text-lg font-bold text-white mb-1 group-hover:text-purple-200 transition-colors">
+                    {item.title}
+                  </h4>
+                  <p class="text-slate-400 text-sm leading-relaxed">
+                    {item.desc}
+                  </p>
+                </div>
+
+              </div>
+            ))}
+          </div>
+
+          <!-- Quick Action -->
+          <div class="mt-8 p-4 bg-gradient-to-r from-purple-900/20 to-pink-900/20 rounded-xl border border-purple-500/20 flex items-center justify-between">
+            <span class="text-sm text-purple-200 font-medium pl-2">Ready to combine clips?</span>
+            <a href="/editor" class="bg-white text-slate-900 px-5 py-2 rounded-lg text-sm font-bold hover:bg-purple-50 transition-colors">
+              Merger Now
+            </a>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
 
 </MarketingLayout>
